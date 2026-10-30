@@ -11,6 +11,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(SME_EXAMPLE "Пример использования" ON)
 option(SME_TEST "Юнит-тесты" ON)
+set(SME_MAX_CALL_DEPTH 64 CACHE STRING "Maximum nested script call depth")
+if(NOT SME_MAX_CALL_DEPTH MATCHES "^[1-9][0-9]*$")
+    message(FATAL_ERROR "SME_MAX_CALL_DEPTH must be a positive integer")
+endif()
 
 set(mln_headers
     ${CMAKE_CURRENT_SOURCE_DIR}/include/sme/sme.h
@@ -27,13 +31,14 @@ set(mln_headers
 
 set(mln_sources
     ${CMAKE_CURRENT_SOURCE_DIR}/src/sme_engine.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/sme_heap.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/sme_value.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/sme_host.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/sme_lexer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/sme_parser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/sme_preprocess.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/sme_compiler.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/sme_machine.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/sme_state.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/smelib_filesystem.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/smelib_default.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/smelib_gs.cpp
@@ -60,6 +65,7 @@ target_include_directories(ScriptMerlin
 )
 
 target_compile_features(ScriptMerlin PUBLIC cxx_std_20)
+target_compile_definitions(ScriptMerlin PRIVATE SME_MAX_CALL_DEPTH=${SME_MAX_CALL_DEPTH})
 set_target_properties(ScriptMerlin PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     EXPORT_NAME ScriptMerlin
@@ -90,7 +96,7 @@ install(EXPORT ScriptMerlinTargets
 )
 
 configure_package_config_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/ScriptMerlinConfig.cmake.in
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/config/ScriptMerlinConfig.cmake.in
     ${CMAKE_CURRENT_BINARY_DIR}/ScriptMerlinConfig.cmake
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ScriptMerlin
 )

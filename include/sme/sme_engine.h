@@ -67,20 +67,11 @@ namespace sme
 		// Вызов по индексу. Индекс вне таблицы функций — ошибка, не тихий 0.
 		Value callIndex(size_t index, std::span<const Value> args);
 		
-		bool isReference(const Value& value) const;
 		// Если value — ссылка, вернуть то, на что она указывает. Иначе само value.
 		// Протухшая ссылка читается как null, без исключения.
 		Value follow(const Value& value) const;
-		// Числовой код типа: 0 null/ссылка/объект, 1 int, 2 float, 3 string,
-		// 4 table, 6 NULL. Тот же код возвращают typeof и ?имя.
-		int32_t typeCode(const Value& value) const;
 		void resizeTable(const Value& table, size_t size);
 		Value makeTable(std::vector<Value> items);
-		// Удержать значение между вызовами. clearAnchors снимает все такие удержания.
-		void anchor(const Value& value);
-		void clearAnchors();
-		size_t anchorCount() const;
-		void resizeAnchors(size_t count);
 		
 		// Подменяет таблицу функций. Уже существующие глобалы сохраняют значения;
 		// #def того же имени значение перезаписывает. Пока на стеке есть вызов, load
@@ -89,8 +80,7 @@ namespace sme
 		void loadSource(std::string_view source, std::string_view name = "script");
 		
 		// Недостающие аргументы приходят как null, лишние отбрасываются — как при
-		// вызове скрипт→скрипт. Хендл результата жив до следующего call() или resume();
-		// чтобы пережить их, нужен anchor. Уже собранный хендл читается как "invalid".
+		// вызове скрипт→скрипт. Результат владеет данными и может храниться дольше Engine.
 		Value call(std::string_view function, std::span<const Value> args = {});
 		// Верхний кадр стоит сразу за stop. Вложенный call чужую паузу не снимает.
 		bool stopped() const;
@@ -101,16 +91,6 @@ namespace sme
 		// nullopt — функции с таким именем нет.
 		std::optional<size_t> functionScope(std::string_view name) const;
 		
-		Value makeString(std::string text);
-		std::string toString(const Value& value) const;
-		// Имя типа для type() и отладки. NULL — "pointer", мёртвый хендл — "invalid".
-		std::string_view typeName(const Value& value) const;
-		Type typeOf(const Value& value) const;
-		std::string stringOf(const Value& value) const;
-		size_t lengthOf(const Value& value) const;
-		int integerOf(const Value& value) const;
-		float floatOf(const Value& value) const;
-		
 	public:
 		void Log(const log::Level level, const std::string& text);
 		void Error(const error::Code code, const std::string& text);
@@ -119,9 +99,6 @@ namespace sme
 		void compileUnit(const struct SourceUnit& unit, std::string_view name);
 		void rejectActiveCall() const;
 		Value invoke(size_t index, std::span<const Value> args);
-		// Кладёт результат в корень сборки и собирает кучу, пока он ещё удержан.
-		Value retain(Value result);
-		
 		std::unique_ptr<State> state_;
 	};
 

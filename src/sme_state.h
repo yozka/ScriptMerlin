@@ -5,66 +5,24 @@
 #include "sme/sme_value.h"
 
 #include <cstdint>
-#include <deque>
-#include <functional>
 #include <string>
 #include <string_view>
 #include <type_traits>
 #include <unordered_map>
+#include <utility>
 #include <variant>
 #include <vector>
 
 namespace sme {
 
-// Внутреннее состояние движка: байткод, куча, кадры и корни сборки мусора.
+// Внутреннее состояние движка: байткод и кадры.
 // Публичный API — Engine. Сюда смотрят компилятор и интерпретатор.
 
-// Таблица скрипта: плоский вектор, индекс — целое с нуля.
-struct Table {
-    std::vector<Value> items;
-};
-
-// Объект хоста, лежащий в куче. shared_ptr держит C++-объект,
-// пока слот кучи жив. release() зовётся отдельно, когда слот собирают.
-struct HostBox {
-    std::shared_ptr<HostObject> object;
-};
-
-// Ссылка скрипта: &локал, &глобал или &таблица[i].
-// Ссылка на локал помнит поколение кадра. Индекс в стеке после return
-// занимают заново, и без поколения старая ссылка прочитала бы чужой регистр.
-struct Reference {
-    bool global = false;
-    bool indexed = false;
-    size_t frame = 0;
-    size_t frameGeneration = 0;
-    size_t slot = 0;
-    Handle container{};
-    size_t index = 0;
-};
-
-// Всё, что лежит в куче и адресуется хендлом.
-using Object = std::variant<std::string, Table, HostBox, Reference>;
-
-#define OT_STR 0
-#define OT_TAB 1
-#define OT_OBJ 2
-#define OT_REF 3
-
-#define OT_CHECK(index, type) \
-    static_assert(std::is_same_v<std::variant_alternative_t<(index), Object>, type>, \
-        #index " is not " #type " in Object")
-
-OT_CHECK(OT_STR, std::string);
-OT_CHECK(OT_TAB, Table);
-OT_CHECK(OT_OBJ, HostBox);
-OT_CHECK(OT_REF, Reference);
-static_assert(std::variant_size_v<Object> == 4, "Object gained or lost an alternative");
 using Factory = std::function<std::shared_ptr<HostObject>()>;
 
-// Константа байткода. Строка здесь ещё текст: в значение-хендл её
-// превращает LoadConst в момент выполнения.
-using Constant = std::variant<std::monostate, int, float, bool, std::string, Pointer>;
+// Константа байткода. Строка здесь ещё текст: LoadConst копирует её в Value
+// при первом выполнении и затем использует interned-значение.
+using Constant = std::variant<std::monostate, int, float, bool, std::string, std::nullptr_t>;
 
 // Байткод регистровой машины. r[n] — регистр текущего кадра.
 // Арифметика с двумя операндами пишет r[a] = r[b] □ r[c], если не сказано иначе.
@@ -96,6 +54,8 @@ enum class Op : uint8_t {
     Jump,         // ip = a
     JumpIfFalse,  // если r[a] ложно, ip = b
     JumpIfTrue,
+    JumpIfNotLe,  // если r[a] <= r[b] ложно, ip = c
+    IncJumpLe,    // r[a] += 1; если r[a] <= r[b], ip = c
     Call,         // r[a] = функция[b](r[c] .. count d); лишние аргументы отбрасываются, нехватка остаётся null
     CallNative,   // r[a] = натив[b](r[c] .. count d)
     Return,       // вернуть r[a] в вызывающий кадр или хосту
@@ -143,7 +103,7 @@ struct Chunk {
     uint16_t registerCount = 0;
     std::vector<Instruction> code;
     std::vector<Constant> constants;
-    // Строковые константы создаются один раз и живут, пока жив chunk.
+    // Строковые константы разделяют владельца и живут, пока жив chunk или Value.
     mutable std::vector<Value> interned;
     size_t scope = 0; // копия #scope файла, одна на все функции загрузки
 };
@@ -171,39 +131,7 @@ struct RunState {
     std::vector<Frame> frames;
 };
 
-// Куча с поколениями слотов. deque не сдвигает уже выданные слоты при росте,
-// поэтому ссылка из at() живёт до сборки этого слота.
-class Heap {
-public:
-    using RootFn = std::function<void(std::vector<Value>&)>;
-
-    void setRoots(RootFn roots);
-
-    Handle allocate(Object object);
-    bool check(Handle handle) const;
-    Object& at(Handle handle);
-    const Object& at(Handle handle) const;
-
-    void collect();
-
-private:
-    struct Slot {
-        size_t generation = 1;
-        bool live = false;
-        Object data;
-    };
-
-    void markValue(const Value& value, std::vector<uint8_t>& mark) const;
-
-    std::deque<Slot> slots_;
-    std::vector<size_t> free_;
-    RootFn roots_;
-    // Короткоживущие строки в цикле не должны собирать кучу каждые 32 объекта.
-    static constexpr uint32_t kCollectAt = 65536;
-};
-
 struct State {
-    Heap heap;
     std::vector<Global> globals;
     std::vector<Chunk> functions;
     std::vector<std::string> nativeNames;
@@ -212,25 +140,15 @@ struct State {
     files::IFileSystem::Ptr files;
     log::ILogging::Ptr log;
     std::vector<RunState> runStack;
-    std::vector<std::vector<Value>> regPool; // пустые массивы регистров для повторных вызовов
-    std::vector<Value> pins; // явные anchor и временные пины нативов
-    // Последнее значение, отданное хосту. Корень сборки до следующего call/resume,
-    // иначе строка из return умирает на ближайшей сборке и читается как "invalid".
-    Value result;
     size_t frameSerial = 1;
+    uint32_t referenceSerial = 1;
     std::string sourceName = "script";
     size_t scope = 0;
 
     size_t freshFrameId();
-    void gatherRoots(std::vector<Value>& out) const;
+    uint32_t freshReferenceId();
     void fail(const std::string& message, int line = 0);
 
-    Value makeString(std::string text);
-    std::string toString(const Value& value) const;
-    std::string_view typeName(const Value& value) const;
-    Type typeOf(const Value& value) const;
-    std::string stringOf(const Value& value) const;
-    size_t lengthOf(const Value& value) const;
     bool truthy(const Value& value) const;
 
     // Вид живёт в пуле констант chunk, пока этот chunk не заменят.

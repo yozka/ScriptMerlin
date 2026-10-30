@@ -1,43 +1,135 @@
 #pragma once
 
 #include <cstddef>
-#include <cstring>
+#include <cstdint>
+#include <memory>
+#include <optional>
+#include <string>
+#include <string_view>
 #include <type_traits>
 #include <variant>
+#include <vector>
 
-namespace sme {
+namespace sme 
+{
 
-// Хендл — адрес объекта в куче движка, а не сам объект.
-// generation отличает живой слот от переиспользованного: после сборки
-// мусора тот же index может принадлежать уже другой строке или таблице.
-struct Handle {
-    size_t index = 0;
-    size_t generation = 0;
+	class HostObject;
+	class Table;
+	class Value;
 
-    friend bool operator==(const Handle& a, const Handle& b) {
-        return a.index == b.index && a.generation == b.generation;
-    }
-};
+	using Handle = std::shared_ptr<HostObject>;
+	using TableHandle = std::shared_ptr<Table>;
+	using SharedString = std::shared_ptr<std::string>;
+	using SharedValue = std::shared_ptr<Value>;
 
-// Скриптовый указатель NULL. Это не «пустое значение»: у null код типа 0,
-// у NULL — 6. В языке они пишутся по-разному: null/NUL и NULL.
-struct Pointer {};
+	// Вид значения. Invalid зарезервирован для пустого shared_ptr.
+	enum class Type
+	{
+		Null,
+		Int,
+		Float,
+		Bool,
+		String,
+		Table,
+		Ref,
+		Object,
+		Pointer,
+		Invalid
+	};
 
-// Короткая строка прямо в значении, без кучи. Длиннее 7 байт — Handle.
-struct ShortStr {
-    char data[7]{};
-    uint8_t len = 0;
+	class Table : public std::vector<Value>
+	{
+	public:
+		using std::vector<Value>::vector;
+	};
 
-    friend bool operator==(const ShortStr& a, const ShortStr& b) {
-        return a.len == b.len && std::memcmp(a.data, b.data, a.len) == 0;
-    }
-};
+	struct LocalReference
+	{
+		uint32_t frame = 0;
+		size_t frameGeneration = 0;
+		uint16_t slot = 0;
+		uint32_t identity = 0;
+		
+		friend bool operator==(const LocalReference&, const LocalReference&) = default;
+	};
 
-// Непосредственные значения лежат прямо в variant.
-// Длинная строка, таблица, ссылка и объект хоста — это Handle в кучу.
-// bool скрипт сам не производит (true/false компилируются в int 0/1),
-// но хост может передать настоящий bool.
-using Value = std::variant<std::monostate, int, float, bool, Handle, Pointer, ShortStr>;
+	struct GlobalReference
+	{
+		uint32_t slot = 0;
+		uint32_t identity = 0;
+		
+		friend bool operator==(const GlobalReference&, const GlobalReference&) = default;
+	};
+
+	struct IndexedReference
+	{
+		TableHandle container;
+		uint32_t index = 0;
+		uint32_t identity = 0;
+		
+		friend bool operator==(const IndexedReference&, const IndexedReference&) = default;
+	};
+
+	// Строки и числа хранятся прямо в Value. Таблицы доступны как vector<Value>,
+	// а SharedValue разделяет владение отдельным значением между копиями.
+	// bool скрипт сам не производит (true/false компилируются в int 0/1),
+	// но хост может передать настоящий bool.
+	using ValueStorage = std::variant<std::monostate, int, float, bool, Handle, std::nullptr_t, std::string,
+	SharedString, TableHandle, SharedValue, LocalReference, GlobalReference, IndexedReference>;
+
+	class Value : public ValueStorage {
+	public:
+		using Base = ValueStorage;
+		using Base::Base;
+		using Base::operator=;
+		
+	public:
+		static Value Integer(int value);
+		static Value Real(float value);
+		static Value Boolean(bool value);
+		static Value String(std::string value);
+		static Value Null();
+		static Value Pointer();
+		static Value Shared(Value value);
+		
+	public:
+		bool IsNull() const;
+		bool IsReference() const;
+		bool IsInteger() const;
+		bool IsFloat() const;
+		bool IsBool() const;
+		bool IsString() const;
+		bool IsTable() const;
+		bool IsObject() const;
+		bool IsPointer() const;
+		bool IsInvalid() const;
+		std::optional<float> AsNumber() const;
+		float AsFloat(const float def = 0.0f) const;
+		int AsInteger(const int def = 0) const;
+		std::string AsString(const std::string& def = {}) const;
+		size_t Length() const;
+		
+		Type TypeOf() const;
+		// Коды typeof сохранены для совместимости с другими скриптами.
+		int32_t TypeCode() const;
+		std::string_view TypeName() const;
+		
+		std::string ToString() const;
+	};
+
+
+
+}
+
+namespace std
+{
+	template <>
+	struct variant_size<sme::Value> : variant_size<sme::Value::Base> {};
+
+	template <size_t Index>
+	struct variant_alternative<Index, sme::Value> : variant_alternative<Index, sme::Value::Base> {};
+}
+
 
 // Индекс типа в Value. Число совпадает с порядком в variant выше.
 #define VT_NULL 0
@@ -46,51 +138,29 @@ using Value = std::variant<std::monostate, int, float, bool, Handle, Pointer, Sh
 #define VT_BOOL 3
 #define VT_HANDLE 4
 #define VT_PTR  5
-#define VT_SSTR 6
+#define VT_STRING 6
+#define VT_SHARED_STRING 7
+#define VT_TABLE 8
+#define VT_SHARED_VALUE 9
+#define VT_LOCAL_REF 10
+#define VT_GLOBAL_REF 11
+#define VT_INDEXED_REF 12
 
 #define VT_CHECK(index, type) \
-    static_assert(std::is_same_v<std::variant_alternative_t<(index), Value>, type>, \
-        #index " is not " #type " in Value")
+	static_assert(std::is_same_v<std::variant_alternative_t<(index), sme::Value>, type>, \
+		#index " is not " #type " in Value")
 
 VT_CHECK(VT_NULL, std::monostate);
 VT_CHECK(VT_INT, int);
 VT_CHECK(VT_FLOAT, float);
 VT_CHECK(VT_BOOL, bool);
-VT_CHECK(VT_HANDLE, Handle);
-VT_CHECK(VT_PTR, Pointer);
-VT_CHECK(VT_SSTR, ShortStr);
-static_assert(std::variant_size_v<Value> == 7, "Value gained or lost an alternative");
-
-inline Value integer(int value) { return Value(std::in_place_type<int>, value); }
-inline Value real(float value) { return Value(std::in_place_type<float>, value); }
-inline Value boolean(bool value) { return Value(std::in_place_type<bool>, value); }
-// monostate — «значения нет». Так выглядят null, непереданный аргумент и пустой слот.
-inline Value null() { return Value{}; }
-inline Value pointer() { return Value(std::in_place_type<Pointer>); }
-
-inline Value shortString(const char* data, size_t size) {
-    ShortStr text;
-    text.len = static_cast<uint8_t>(size);
-    if (size != 0) {
-        std::memcpy(text.data, data, size);
-    }
-    return Value(std::in_place_type<ShortStr>, text);
-}
-
-inline bool isNull(const Value& value) { return std::holds_alternative<std::monostate>(value); }
-
-// Вид значения. Строка — и короткая, и лежащая в куче. Invalid — мёртвый хендл.
-enum class Type {
-    Null,
-    Int,
-    Float,
-    Bool,
-    String,
-    Table,
-    Ref,
-    Object,
-    Pointer,
-    Invalid
-};
-
-}  // пространство имён sme
+VT_CHECK(VT_HANDLE, sme::Handle);
+VT_CHECK(VT_PTR, std::nullptr_t);
+VT_CHECK(VT_STRING, std::string);
+VT_CHECK(VT_SHARED_STRING, sme::SharedString);
+VT_CHECK(VT_TABLE, sme::TableHandle);
+VT_CHECK(VT_SHARED_VALUE, sme::SharedValue);
+VT_CHECK(VT_LOCAL_REF, sme::LocalReference);
+VT_CHECK(VT_GLOBAL_REF, sme::GlobalReference);
+VT_CHECK(VT_INDEXED_REF, sme::IndexedReference);
+static_assert(std::variant_size_v<sme::Value> == 13, "Value gained or lost an alternative");

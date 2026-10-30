@@ -170,7 +170,7 @@ private:
         }
         case Expr::Kind::Null: {
             uint16_t dest = allocTemp();
-            if (expr.intValue == 1) emit(Op::LoadConst, dest, addConst(Pointer{}), 0, 0, 0, expr.line);
+            if (expr.intValue == 1) emit(Op::LoadConst, dest, addConst(nullptr), 0, 0, 0, expr.line);
             else emit(Op::LoadConst, dest, addConst(std::monostate{}), 0, 0, 0, expr.line);
             return dest;
         }
@@ -366,8 +366,24 @@ private:
     }
 
     uint16_t compileAssign(const Expr& expr) {
+        const Expr& target = *expr.kids[0];
+        const Expr& valueExpr = *expr.kids[1];
+        if (target.kind == Expr::Kind::Name) {
+            const auto local = locals_.find(target.text);
+            if (local != locals_.end() && valueExpr.kind == Expr::Kind::Binary &&
+                valueExpr.binary != BinaryOp::And && valueExpr.binary != BinaryOp::Or) {
+                const Expr& right = *valueExpr.kids[1];
+                if (right.kind == Expr::Kind::Int && right.intValue >= -32768 && right.intValue <= 32767) {
+                    const uint16_t lhs = compileExpr(*valueExpr.kids[0]);
+                    emit(Op::BinaryImm, local->second, lhs,
+                         static_cast<uint16_t>(binaryOp(valueExpr.binary)),
+                         static_cast<uint16_t>(static_cast<int16_t>(right.intValue)), 0, expr.line);
+                    return local->second;
+                }
+            }
+        }
         uint16_t value = compileExpr(*expr.kids[1]);
-        store(*expr.kids[0], value, expr.line);
+        store(target, value, expr.line);
         return value;
     }
 
@@ -467,8 +483,16 @@ private:
 
     uint16_t compileModify(const Expr& expr) {
         Place place = placeOf(*expr.kids[0], "invalid assignment target");
+        const Expr& right = *expr.kids[1];
+        if (place.kind == Place::Kind::Local && right.kind == Expr::Kind::Int &&
+            right.intValue >= -32768 && right.intValue <= 32767) {
+            emit(Op::BinaryImm, place.primary, place.primary,
+                 static_cast<uint16_t>(binaryOp(expr.binary)),
+                 static_cast<uint16_t>(static_cast<int16_t>(right.intValue)), 0, expr.line);
+            return place.primary;
+        }
         uint16_t current = loadPlace(place, expr.line);
-        uint16_t rhs = compileExpr(*expr.kids[1]);
+        uint16_t rhs = compileExpr(right);
         uint16_t dest = allocTemp();
         emit(binaryOp(expr.binary), dest, current, rhs, 0, 0, expr.line);
         storePlace(place, dest, expr.line);
@@ -477,12 +501,18 @@ private:
 
     uint16_t compileUpdate(const Expr& expr, int delta) {
         Place place = placeOf(*expr.kids[0], "invalid update target");
+        if (place.kind == Place::Kind::Local) {
+            uint16_t saved = place.primary;
+            if (!expr.prefix) {
+                saved = allocTemp();
+                emit(Op::Copy, saved, place.primary, 0, 0, 0, expr.line);
+            }
+            emit(Op::BinaryImm, place.primary, place.primary,
+                 static_cast<uint16_t>(Op::Add), static_cast<uint16_t>(delta), 0, expr.line);
+            return expr.prefix ? place.primary : saved;
+        }
         uint16_t current = loadPlace(place, expr.line);
         uint16_t saved = current;
-        if (!expr.prefix && place.kind == Place::Kind::Local) {
-            saved = allocTemp();
-            emit(Op::Copy, saved, current, 0, 0, 0, expr.line);
-        }
         uint16_t step = allocTemp();
         emit(Op::LoadConst, step, addConst(delta), 0, 0, 0, expr.line);
         uint16_t next = allocTemp();
@@ -708,8 +738,11 @@ private:
         uint16_t endSource = compileExpr(*stmt.expr2);
         uint16_t end = allocTemp();
         emit(Op::Move, end, endSource, 0, 0, 0, stmt.line);
-        uint16_t one = allocTemp();
-        emit(Op::LoadConst, one, addConst(int{1}), 0, 0, 0, stmt.line);
+        uint16_t one = 0;
+        if (global) {
+            one = allocTemp();
+            emit(Op::LoadConst, one, addConst(int{1}), 0, 0, 0, stmt.line);
+        }
 
         loops_.push_back(Loop{});
         uint16_t condIp = here();
@@ -718,9 +751,8 @@ private:
             current = allocTemp();
             emit(Op::LoadGlobal, current, index, 0, 0, 0, stmt.line);
         }
-        uint16_t cond = allocTemp();
-        emit(Op::CmpLe, cond, current, end, 0, 0, stmt.line);
-        uint16_t jumpFalse = emit(Op::JumpIfFalse, cond, 0, 0, 0, 0, stmt.line);
+        uint16_t jumpFalse = emit(Op::JumpIfNotLe, current, end, 0, 0, 0, stmt.line);
+        const uint16_t bodyIp = here();
         compileBody(stmt.body);
         uint16_t increment = here();
         for (uint16_t jump : loops_.back().continues) {
@@ -731,12 +763,12 @@ private:
             emit(Op::LoadGlobal, loaded, index, 0, 0, 0, stmt.line);
             emit(Op::Add, loaded, loaded, one, 0, 0, stmt.line);
             emit(Op::StoreGlobal, index, loaded, 0, 0, 0, stmt.line);
+            emit(Op::Jump, condIp, 0, 0, 0, 0, stmt.line);
         } else {
-            emit(Op::Add, index, index, one, 0, 0, stmt.line);
+            emit(Op::IncJumpLe, index, end, bodyIp, 0, 0, stmt.line);
         }
-        emit(Op::Jump, condIp, 0, 0, 0, 0, stmt.line);
         uint16_t endIp = here();
-        code_[jumpFalse].b = endIp;
+        code_[jumpFalse].c = endIp;
         for (uint16_t jump : loops_.back().breaks) {
             code_[jump].a = endIp;
         }

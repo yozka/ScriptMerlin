@@ -47,21 +47,21 @@ struct Result {
     sme::Engine* engine = nullptr;
     sme::Value value;
 
-    std::string text() const { return engine->toString(value); }
+    std::string text() const { return value.ToString(); }
     int integer() const {
         if (const auto* number = std::get_if<int>(&value)) return *number;
-        ADD_FAILURE() << "expected int, got " << engine->typeName(value) << " " << engine->toString(value);
+        ADD_FAILURE() << "expected int, got " << value.TypeName() << " " << value.ToString();
         return 0;
     }
     float floating() const {
         if (const auto* number = std::get_if<float>(&value)) return *number;
         if (const auto* number = std::get_if<int>(&value)) return static_cast<float>(*number);
-        ADD_FAILURE() << "expected float, got " << engine->typeName(value);
+        ADD_FAILURE() << "expected float, got " << value.TypeName();
         return 0.f;
     }
     bool boolean() const {
         if (const auto* number = std::get_if<int>(&value)) return *number != 0;
-        ADD_FAILURE() << "expected int, got " << engine->typeName(value);
+        ADD_FAILURE() << "expected int, got " << value.TypeName();
         return false;
     }
 };
@@ -83,19 +83,19 @@ public:
     void release() override { ++released; }
 
     sme::Value get(sme::Engine& engine, std::string_view name) override {
-        if (name == "test_int") return sme::integer(testInt_);
-        if (name == "test_str") return engine.makeString(testStr_);
-        if (name == "test_out") return engine.makeString(testOut_);
+        if (name == "test_int") return sme::Value::Integer(testInt_);
+        if (name == "test_str") return sme::Value::String(testStr_);
+        if (name == "test_out") return sme::Value::String(testOut_);
         return HostObject::get(engine, name);
     }
 
     void set(sme::Engine& engine, std::string_view name, const sme::Value& value) override {
-        if (name == "test_int" && std::holds_alternative<int>(value)) {
+        if (name == "test_int" && value.IsInteger()) {
             testInt_ = std::get<int>(value);
             return;
         }
-        if ((name == "test_str" || name == "test_out") && engine.typeOf(value) == sme::Type::String) {
-            std::string text = engine.stringOf(value);
+        if ((name == "test_str" || name == "test_out") && value.IsString()) {
+            std::string text = value.AsString();
             if (name == "test_str") testStr_ = std::move(text);
             else testOut_ = std::move(text);
             return;
@@ -106,13 +106,13 @@ public:
     sme::Value call(sme::Engine& engine, std::string_view name, std::span<const sme::Value> args) override {
         if (name == "run") {
             testOut_ = testStr_ + std::to_string(testInt_);
-            return sme::null();
+            return sme::Value::Null();
         }
-        if (name == "join" && args.size() == 2 && std::holds_alternative<int>(args[0]) && engine.typeOf(args[1]) == sme::Type::String) {
-            return engine.makeString(std::to_string(std::get<int>(args[0])) + engine.stringOf(args[1]));
+        if (name == "join" && args.size() == 2 && args[0].IsInteger() && args[1].IsString()) {
+            return sme::Value::String(std::to_string(std::get<int>(args[0])) + args[1].AsString());
         }
-        if (name == "add" && args.size() == 2 && std::holds_alternative<int>(args[0]) && std::holds_alternative<int>(args[1])) {
-            return sme::integer(std::get<int>(args[0]) + std::get<int>(args[1]));
+        if (name == "add" && args.size() == 2 && args[0].IsInteger() && args[1].IsInteger()) {
+            return sme::Value::Integer(std::get<int>(args[0]) + std::get<int>(args[1]));
         }
         return HostObject::call(engine, name, args);
     }
@@ -1034,6 +1034,20 @@ TEST(EdgeCases, VerySmallNumbers)
     EXPECT_EQ(script.integer(), -2147483648);
 }
 
+TEST(EdgeCases, IntegerArithmeticOverflow)
+{
+    sme::Engine engine;
+    engine.loadSource(R"(
+        fn add_overflow() { return 2147483647 + 1; }
+        fn sub_overflow() { return -2147483647 - 2; }
+        fn mul_overflow() { return 1073741824 * 2; }
+    )");
+
+    EXPECT_THROW(engine.call("add_overflow"), sme::RError);
+    EXPECT_THROW(engine.call("sub_overflow"), sme::RError);
+    EXPECT_THROW(engine.call("mul_overflow"), sme::RError);
+}
+
 TEST(EdgeCases, FloatingPointPrecision)
 {
     Result script = run("ver2/test_edge_cases.gs", "test_FloatingPointPrecision");
@@ -1076,7 +1090,7 @@ TEST(ScriptObject, test_Prop)
     engine.load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = engine.call("test_Prop");
     EXPECT_EQ(TStruct::alive, 0);
-    EXPECT_EQ(engine.toString(value), "hello world42");
+    EXPECT_EQ(value.ToString(), "hello world42");
 }
 
 TEST(ScriptObject, test_PropCall)
@@ -1090,7 +1104,7 @@ TEST(ScriptObject, test_PropCall)
     engine.load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = engine.call("test_PropCall");
     EXPECT_EQ(TStruct::alive, 0);
-    EXPECT_EQ(engine.toString(value), "7 items");
+    EXPECT_EQ(value.ToString(), "7 items");
 }
 
 TEST(ScriptObject, test_PropAdd)
@@ -1103,7 +1117,7 @@ TEST(ScriptObject, test_PropAdd)
     engine.addFactory("TStruct", [] { return std::make_shared<TStruct>(); });
     engine.load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = engine.call("test_PropAdd");
-    ASSERT_TRUE(std::holds_alternative<int>(value));
+    ASSERT_TRUE(value.IsInteger());
     EXPECT_EQ(TStruct::alive, 0);
     EXPECT_EQ(std::get<int>(value), 43);
 }
@@ -1123,12 +1137,120 @@ TEST(ScriptObject, test_PropRelease)
     });
     engine.load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = engine.call("test_PropRelease");
-    ASSERT_TRUE(std::holds_alternative<int>(value));
+    ASSERT_TRUE(value.IsInteger());
     EXPECT_EQ(std::get<int>(value), 0);
-    EXPECT_EQ(TStruct::released, 1);
+    EXPECT_EQ(TStruct::released, 0);
     EXPECT_EQ(TStruct::alive, 1);
     kept.reset();
     EXPECT_EQ(TStruct::alive, 0);
+}
+
+TEST(Value, AsNumber)
+{
+    EXPECT_EQ(sme::Value::Integer(42).AsNumber(), 42.0);
+    EXPECT_EQ(sme::Value::Real(2.5f).AsNumber(), 2.5);
+    EXPECT_EQ(sme::Value::Boolean(true).AsNumber(), 1.0);
+    EXPECT_FALSE(sme::Value::String("42").AsNumber().has_value());
+    EXPECT_EQ(sme::Value::Integer(42).AsFloat(), 42.0f);
+    EXPECT_EQ(sme::Value::Real(2.5f).AsInteger(), 2);
+    EXPECT_EQ(sme::Value::String("42").AsFloat(3.5f), 3.5f);
+    EXPECT_EQ(sme::Value::String("42").AsInteger(7), 7);
+    EXPECT_EQ(sme::Value::String("text").AsString(), "text");
+    EXPECT_EQ(sme::Value::String("text").AsString("default"), "text");
+    EXPECT_EQ(sme::Value::Integer(42).AsString("default"), "default");
+    EXPECT_EQ(sme::Value::String("text").Length(), 4u);
+    EXPECT_EQ(sme::Value::Null().TypeCode(), 0);
+    EXPECT_EQ(sme::Value::Integer(42).TypeCode(), 1);
+    EXPECT_EQ(sme::Value::Real(2.5f).TypeCode(), 2);
+    EXPECT_EQ(sme::Value::String("text").TypeCode(), 3);
+
+    auto table = std::make_shared<sme::Table>();
+    table->emplace_back(42);
+    const sme::Value valueTable(std::in_place_type<sme::TableHandle>, table);
+    EXPECT_EQ(valueTable.Length(), 1u);
+    EXPECT_EQ(valueTable.TypeCode(), 4);
+    EXPECT_EQ(sme::Value::Pointer().TypeCode(), 6);
+    EXPECT_EQ(sme::Value::Boolean(true).TypeCode(), 1);
+    EXPECT_EQ(sme::Value::Shared(sme::Value::Integer(1)).TypeCode(), 0);
+    EXPECT_THROW(sme::Value::Integer(42).Length(), sme::RError);
+}
+
+TEST(ValueOwnership, ValuesOutliveEngineAndCalls)
+{
+    sme::Value value;
+    sme::Value table;
+    {
+        sme::Engine engine;
+        engine.loadSource(R"(
+            fn text() { return "a string that exceeds inline storage"; }
+            fn table() { return [1, 2, 3]; }
+            fn other() { return 42; }
+            fn copy_string() {
+                var original = "long enough";
+                var copy = original;
+                copy[[0]] = 'X';
+                return original + ":" + copy;
+            }
+            fn reference_string() {
+                var text = "original string";
+                var ref = &text;
+                *ref = "updated string";
+                return text;
+            }
+        )");
+        value = engine.call("text");
+        table = engine.call("table");
+        EXPECT_TRUE(value.IsString());
+        EXPECT_EQ(value.ToString(), "a string that exceeds inline storage");
+        EXPECT_EQ(table.ToString(), "[1, 2, 3]");
+        for (int i = 0; i < 100; ++i) {
+            EXPECT_EQ(std::get<int>(engine.call("other")), 42);
+        }
+        EXPECT_EQ(value.ToString(), "a string that exceeds inline storage");
+        EXPECT_EQ(engine.call("copy_string").ToString(), "long enough:Xong enough");
+        sme::Value referenceString = engine.call("reference_string");
+        EXPECT_TRUE(std::holds_alternative<sme::SharedString>(referenceString));
+        EXPECT_EQ(referenceString.ToString(), "updated string");
+    }
+
+    sme::Engine reader;
+    EXPECT_EQ(value.ToString(), "a string that exceeds inline storage");
+    EXPECT_EQ(table.ToString(), "[1, 2, 3]");
+}
+
+TEST(ValueOwnership, CyclicTableOwnershipIsRejected)
+{
+    sme::Engine engine;
+    engine.loadSource(R"(
+        fn cycle() {
+            var table = [0];
+            table[0] = table;
+            return table;
+        }
+    )");
+
+    EXPECT_THROW(engine.call("cycle"), sme::RError);
+}
+
+TEST(ValueOwnership, TablesAndSharedValuesAreAccessibleDirectly)
+{
+    auto items = std::make_shared<sme::Table>();
+    items->emplace_back(42);
+    sme::Value table(std::in_place_type<sme::TableHandle>, items);
+    const auto* storedTable = std::get_if<sme::TableHandle>(&table);
+    ASSERT_NE(storedTable, nullptr);
+    ASSERT_TRUE(*storedTable);
+    ASSERT_EQ((*storedTable)->size(), 1u);
+    EXPECT_EQ(std::get<int>((**storedTable)[0]), 42);
+
+    sme::Value linked = sme::Value::Shared(sme::Value::Integer(7));
+    sme::Value linkedCopy = linked;
+    const auto* sharedValue = std::get_if<sme::SharedValue>(&linked);
+    ASSERT_NE(sharedValue, nullptr);
+    ASSERT_TRUE(*sharedValue);
+    EXPECT_EQ(std::get<int>(**sharedValue), 7);
+    **sharedValue = sme::Value::Integer(11);
+    EXPECT_EQ(std::get<int>(*std::get<sme::SharedValue>(linkedCopy)), 11);
 }
 
 TEST(ScriptObject, test_PropCompound)
@@ -1142,7 +1264,7 @@ TEST(ScriptObject, test_PropCompound)
     engine.load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = engine.call("test_PropCompound");
     EXPECT_EQ(TStruct::alive, 0);
-    EXPECT_EQ(engine.toString(value), "16abc");
+    EXPECT_EQ(value.ToString(), "16abc");
 }
 
 int globalInt(sme::Engine& engine, const char* name) {
@@ -1176,6 +1298,12 @@ TEST(Language, RefAlias)
 {
     Result script = run("ver2/test_language.gs", "test_RefAlias");
     EXPECT_EQ(script.integer(), 8);
+}
+
+TEST(Language, RefIdentity)
+{
+    Result script = run("ver2/test_language.gs", "test_RefIdentity");
+    EXPECT_EQ(script.integer(), 10);
 }
 
 TEST(Language, DefaultParams)
@@ -1472,7 +1600,7 @@ TEST(Language, Stop)
     sme::Value value = engine.resume();
     EXPECT_FALSE(engine.stopped());
     EXPECT_EQ(globalInt(engine, "lang_stop_mark"), 99);
-    ASSERT_TRUE(std::holds_alternative<int>(value));
+    ASSERT_TRUE(value.IsInteger());
     EXPECT_EQ(std::get<int>(value), 0);
 }
 
@@ -1521,7 +1649,7 @@ TEST(Performance, WorkloadSpeed)
         const auto start = std::chrono::steady_clock::now();
         sme::Value value = engine.call("test_Workload");
         samples[i] = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count();
-        ASSERT_TRUE(std::holds_alternative<int>(value));
+        ASSERT_TRUE(value.IsInteger());
         const int got = std::get<int>(value);
         if (i == 0) checksum = got;
         ASSERT_EQ(got, checksum);

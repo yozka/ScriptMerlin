@@ -16,8 +16,8 @@ class HostObject {
 public:
     virtual ~HostObject() = default;
 
-    // Сборщик мусора зовёт release, когда скрипт больше не держит хендл.
-    // Сам C++-объект при этом может жить дальше, если его держит shared_ptr игры.
+    // Оставлен для исходной совместимости. Движок больше не вызывает release():
+    // время жизни объекта определяется shared_ptr.
     virtual void release() {}
 
     virtual Value get(Engine& engine, std::string_view name);
