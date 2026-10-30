@@ -77,6 +77,22 @@ Value intBinary(Op op, int x, int y, int line) {
     }
 }
 
+std::vector<Value> takeRegs(State& state, size_t count) {
+    std::vector<Value> regs;
+    if (!state.regPool.empty()) {
+        regs = std::move(state.regPool.back());
+        state.regPool.pop_back();
+    }
+    regs.assign(count, Value{});
+    return regs;
+}
+
+void giveRegs(State& state, std::vector<Value> regs) {
+    if (state.regPool.size() < 64) {
+        state.regPool.push_back(std::move(regs));
+    }
+}
+
 int narrowInt(double number, int line) {
     if (!std::isfinite(number) ||
         number < static_cast<double>(std::numeric_limits<int>::min()) ||
@@ -117,7 +133,11 @@ Value Machine::materialize(const Chunk& chunk, size_t constant, int line) {
             chunk.interned.resize(chunk.constants.size());
         }
         Value& cached = chunk.interned[constant];
-        if (!std::holds_alternative<std::monostate>(cached)) return cached;
+        if (!std::holds_alternative<std::monostate>(cached)) {
+            if (const auto* handle = std::get_if<Handle>(&cached); !handle || state_.heap.check(*handle)) {
+                return cached;
+            }
+        }
         cached = state_.makeString(*text);
         return cached;
     }
@@ -132,15 +152,16 @@ bool Machine::equals(const Value& lhs, const Value& rhs) {
         }
     }
     auto readText = [&](const Value& value, std::string& out) {
-        if (const auto* text = std::get_if<std::string>(&value)) {
-            out = *text;
+        if (const auto* text = std::get_if<ShortStr>(&value)) {
+            out.assign(text->data, text->len);
             return true;
         }
-        if (const auto* text = std::get_if<SharedString>(&value); text && *text) {
-            out = **text;
-            return true;
-        }
-        return false;
+        const auto* handle = std::get_if<Handle>(&value);
+        if (!handle || !state_.heap.check(*handle)) return false;
+        const auto* stored = std::get_if<std::string>(&state_.heap.at(*handle));
+        if (!stored) return false;
+        out = *stored;
+        return true;
     };
     std::string leftText;
     std::string rightText;
@@ -157,7 +178,13 @@ bool Machine::equals(const Value& lhs, const Value& rhs) {
     if (const auto* flag = std::get_if<bool>(&lhs)) return *flag == std::get<bool>(rhs);
     if (const auto* handle = std::get_if<Handle>(&lhs)) {
         const Handle& other = std::get<Handle>(rhs);
-        if (!*handle || !other) return false;
+        if (!state_.heap.check(*handle) || !state_.heap.check(other)) return false;
+        const Object& left = state_.heap.at(*handle);
+        const Object& right = state_.heap.at(other);
+        if (const auto* text = std::get_if<std::string>(&left)) {
+            const auto* otherText = std::get_if<std::string>(&right);
+            return otherText && *text == *otherText;
+        }
         return *handle == other;
     }
     return false;
@@ -209,16 +236,21 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
         return integer(result ? 1 : 0);
     }
     if (op == Op::Add && state_.typeOf(lhs) == Type::Table && state_.typeOf(rhs) == Type::Table) {
-        Table joined = std::get<Table>(std::get<Handle>(lhs)->data);
-        const Table& extra = std::get<Table>(std::get<Handle>(rhs)->data);
+        Table joined = std::get<Table>(state_.heap.at(std::get<Handle>(lhs)));
+        const Table& extra = std::get<Table>(state_.heap.at(std::get<Handle>(rhs)));
         joined.items.insert(joined.items.end(), extra.items.begin(), extra.items.end());
-        return Value(std::make_shared<Object>(std::move(joined)));
+        return Value{state_.heap.allocate(std::move(joined))};
     }
     if (op == Op::Add) {
         auto textOf = [&](const Value& value) -> std::optional<std::string> {
-            if (const auto* text = std::get_if<std::string>(&value)) return *text;
-            if (const auto* text = std::get_if<SharedString>(&value); text && *text) return **text;
-            return std::nullopt;
+            if (const auto* text = std::get_if<ShortStr>(&value)) {
+                return std::string(text->data, text->len);
+            }
+            const auto* handle = std::get_if<Handle>(&value);
+            if (!handle || !state_.heap.check(*handle)) return std::nullopt;
+            const auto* stored = std::get_if<std::string>(&state_.heap.at(*handle));
+            if (!stored) return std::nullopt;
+            return *stored;
         };
         auto leftText = textOf(lhs);
         auto rightText = textOf(rhs);
@@ -356,7 +388,7 @@ Value Machine::run(size_t function, std::span<const Value> args) {
     Frame frame;
     frame.function = function;
     frame.generation = state_.freshFrameId();
-    frame.regs.resize(chunk.registerCount);
+    frame.regs = takeRegs(state_, chunk.registerCount);
     const size_t supplied = std::min(args.size(), static_cast<size_t>(chunk.parameterCount));
     frame.supplied = static_cast<uint16_t>(supplied);
     for (size_t i = 0; i < supplied; ++i) {
@@ -409,66 +441,24 @@ Value Machine::resume() {
 
 namespace {
 
-bool holdsRef(const Value& value) {
+bool holdsRef(State& state, const Value& value) {
     const auto* handle = std::get_if<Handle>(&value);
-    if (!handle || !*handle) {
+    if (!handle || !state.heap.check(*handle)) {
         return false;
     }
-    return std::holds_alternative<Reference>((*handle)->data);
-}
-
-void promoteString(Value& value) {
-    if (auto* text = std::get_if<std::string>(&value)) {
-        value = std::make_shared<std::string>(std::move(*text));
-    }
-}
-
-const std::string* stringData(const Value& value) {
-    if (const auto* text = std::get_if<std::string>(&value)) return text;
-    if (const auto* text = std::get_if<SharedString>(&value); text && *text) return text->get();
-    return nullptr;
-}
-
-std::string* mutableStringData(Value& value) {
-    if (auto* text = std::get_if<std::string>(&value)) return text;
-    if (auto* text = std::get_if<SharedString>(&value); text && *text) return text->get();
-    return nullptr;
-}
-
-bool reachesObject(const Value& value, const Object* target, std::vector<const Object*>& visited) {
-    const auto* handle = std::get_if<Handle>(&value);
-    if (!handle || !*handle) return false;
-    const Object* object = handle->get();
-    if (object == target) return true;
-    if (std::find(visited.begin(), visited.end(), object) != visited.end()) return false;
-    visited.push_back(object);
-    if (const auto* table = std::get_if<Table>(&object->data)) {
-        for (const Value& item : table->items) {
-            if (reachesObject(item, target, visited)) return true;
-        }
-    } else if (const auto* ref = std::get_if<Reference>(&object->data); ref && ref->indexed && ref->container) {
-        Value container{ref->container};
-        if (reachesObject(container, target, visited)) return true;
-    }
-    return false;
-}
-
-bool createsCycle(const Value& value, const Handle& destination) {
-    if (!destination) return false;
-    std::vector<const Object*> visited;
-    return reachesObject(value, destination.get(), visited);
+    return std::holds_alternative<Reference>(state.heap.at(*handle));
 }
 
 Value& referenced(State& state, const Value& value, int line) {
-    if (!holdsRef(value)) {
+    if (!holdsRef(state, value)) {
         throw RError("value is not a reference", line);
     }
-    const Reference ref = std::get<Reference>(std::get<Handle>(value)->data);
+    const Reference ref = std::get<Reference>(state.heap.at(std::get<Handle>(value)));
     if (ref.indexed) {
-        if (!ref.container) {
+        if (!state.heap.check(ref.container)) {
             throw RError("dangling reference", line);
         }
-        StoredObject& object = ref.container->data;
+        Object& object = state.heap.at(ref.container);
         auto* table = std::get_if<Table>(&object);
         if (!table || ref.index >= table->items.size()) {
             throw RError("dangling reference", line);
@@ -638,7 +628,7 @@ std::optional<Value> Machine::execute() {
                 throw RError("internal argument fault", ins.line);
             }
             Value smallArgs[8];
-            std::vector<Value> argumentStorage;
+            std::vector<Value> heapArgs;
             std::span<const Value> args;
             if (ins.d <= 8) {
                 for (uint16_t i = 0; i < ins.d; ++i) {
@@ -646,11 +636,11 @@ std::optional<Value> Machine::execute() {
                 }
                 args = std::span<const Value>(smallArgs, ins.d);
             } else {
-                argumentStorage.reserve(ins.d);
+                heapArgs.reserve(ins.d);
                 for (uint16_t i = 0; i < ins.d; ++i) {
-                    argumentStorage.push_back(frame.regs[ins.c + i]);
+                    heapArgs.push_back(frame.regs[ins.c + i]);
                 }
-                args = argumentStorage;
+                args = heapArgs;
             }
             bump();
             if (ins.op == Op::CallNative) {
@@ -666,7 +656,7 @@ std::optional<Value> Machine::execute() {
             next.generation = state_.freshFrameId();
             next.writesParent = true;
             next.parentDest = ins.a;
-            next.regs.resize(callee.registerCount);
+            next.regs = takeRegs(state_, callee.registerCount);
             const uint16_t count = std::min(ins.d, callee.parameterCount);
             next.supplied = count;
             for (uint16_t i = 0; i < count && i < next.regs.size(); ++i) {
@@ -679,6 +669,7 @@ std::optional<Value> Machine::execute() {
             Value result = reg(frame, ins.a, ins.line);
             bool writeParent = frame.writesParent;
             uint16_t dest = frame.parentDest;
+            giveRegs(state_, std::move(state_.runStack.back().frames.back().regs));
             state_.runStack.back().frames.pop_back();
             if (state_.runStack.back().frames.empty()) {
                 return result;
@@ -694,7 +685,8 @@ std::optional<Value> Machine::execute() {
             for (uint16_t i = 0; i < ins.c; ++i) {
                 items.push_back(reg(frame, static_cast<uint16_t>(ins.b + i), ins.line));
             }
-            write(ins.a, Value(std::make_shared<Object>(Table{std::move(items)})));
+            Handle handle = state_.heap.allocate(Table{std::move(items)});
+            write(ins.a, Value{handle});
             bump();
             break;
         }
@@ -703,17 +695,20 @@ std::optional<Value> Machine::execute() {
             Value index = reg(frame, ins.c, ins.line);
             const auto* slot = std::get_if<int>(&index);
             if (!slot || *slot < 0) throw RError("index must be a non-negative int", ins.line);
-            if (const auto* text = stringData(object)) {
-                if (static_cast<size_t>(*slot) >= text->size()) throw RError("string index out of range", ins.line);
-                write(ins.a, state_.makeString(std::string(1, (*text)[static_cast<size_t>(*slot)])));
+            if (const auto* text = std::get_if<ShortStr>(&object)) {
+                if (static_cast<size_t>(*slot) >= text->len) throw RError("string index out of range", ins.line);
+                write(ins.a, shortString(text->data + *slot, 1));
                 bump();
                 break;
             }
-            if (!std::holds_alternative<Handle>(object) || !std::get<Handle>(object)) {
+            if (!std::holds_alternative<Handle>(object) || !state_.heap.check(std::get<Handle>(object))) {
                 throw RError("value cannot be indexed", ins.line);
             }
-            const StoredObject& stored = std::get<Handle>(object)->data;
-            if (const auto* table = std::get_if<Table>(&stored)) {
+            const Object& stored = state_.heap.at(std::get<Handle>(object));
+            if (const auto* text = std::get_if<std::string>(&stored)) {
+                if (static_cast<size_t>(*slot) >= text->size()) throw RError("string index out of range", ins.line);
+                write(ins.a, state_.makeString(std::string(1, (*text)[static_cast<size_t>(*slot)])));
+            } else if (const auto* table = std::get_if<Table>(&stored)) {
                 if (static_cast<size_t>(*slot) >= table->items.size()) throw RError("table index out of range", ins.line);
                 write(ins.a, table->items[static_cast<size_t>(*slot)]);
             } else {
@@ -728,13 +723,11 @@ std::optional<Value> Machine::execute() {
             Value object = reg(frame, ins.a, ins.line);
             const auto* slot = std::get_if<int>(&index);
             if (!slot || *slot < 0) throw RError("index must be a non-negative int", ins.line);
-            if (!std::holds_alternative<Handle>(object) || !std::get<Handle>(object)) throw RError("value cannot be indexed", ins.line);
-            Handle container = std::get<Handle>(object);
-            StoredObject& stored = container->data;
+            if (!std::holds_alternative<Handle>(object)) throw RError("value cannot be indexed", ins.line);
+            Object& stored = state_.heap.at(std::get<Handle>(object));
             auto* table = std::get_if<Table>(&stored);
             if (!table) throw RError("only tables can be assigned by index", ins.line);
             if (static_cast<size_t>(*slot) >= table->items.size()) throw RError("table index out of range", ins.line);
-            if (createsCycle(value, container)) throw RError("cyclic table ownership is not supported", ins.line);
             table->items[static_cast<size_t>(*slot)] = std::move(value);
             bump();
             break;
@@ -744,8 +737,8 @@ std::optional<Value> Machine::execute() {
         case Op::CallMethod: {
             const std::string_view name = state_.constantString(chunk, ins.op == Op::SetProp ? ins.b : ins.c, ins.line);
             Value object = reg(frame, ins.op == Op::SetProp ? ins.a : ins.b, ins.line);
-            if (!std::holds_alternative<Handle>(object) || !std::get<Handle>(object)) throw RError("value has no properties", ins.line);
-            StoredObject& stored = std::get<Handle>(object)->data;
+            if (!std::holds_alternative<Handle>(object)) throw RError("value has no properties", ins.line);
+            Object& stored = state_.heap.at(std::get<Handle>(object));
             auto* host = std::get_if<HostBox>(&stored);
             if (!host || !host->object) throw RError("value has no properties", ins.line);
             HostObject* target = host->object.get();
@@ -762,15 +755,15 @@ std::optional<Value> Machine::execute() {
                 break;
             }
             Value smallArgs[8];
-            std::vector<Value> argumentStorage;
+            std::vector<Value> heapArgs;
             std::span<const Value> args;
             if (ins.e <= 8) {
                 for (uint16_t i = 0; i < ins.e; ++i) smallArgs[i] = frame.regs[ins.d + i];
                 args = std::span<const Value>(smallArgs, ins.e);
             } else {
-                argumentStorage.reserve(ins.e);
-                for (uint16_t i = 0; i < ins.e; ++i) argumentStorage.push_back(frame.regs[ins.d + i]);
-                args = argumentStorage;
+                heapArgs.reserve(ins.e);
+                for (uint16_t i = 0; i < ins.e; ++i) heapArgs.push_back(frame.regs[ins.d + i]);
+                args = heapArgs;
             }
             bump();
             Value result = target->call(engine_, name, args);
@@ -778,14 +771,14 @@ std::optional<Value> Machine::execute() {
             break;
         }
         case Op::MakeRefLocal: {
-            // Ссылочный строковый слот получает разделяемое стабильное хранилище.
+            // Поколение кадра запоминается вместе с индексом. После return
+            // новый вызов может занять тот же индекс, но поколение уже другое.
             Reference ref;
-            auto& frames = state_.runStack.back().frames;
-            promoteString(frames.back().regs[ins.b]);
+            const auto& frames = state_.runStack.back().frames;
             ref.frame = frames.size() - 1;
             ref.frameGeneration = frames.back().generation;
             ref.slot = ins.b;
-            write(ins.a, Value(std::make_shared<Object>(ref)));
+            write(ins.a, Value{state_.heap.allocate(ref)});
             bump();
             break;
         }
@@ -793,18 +786,14 @@ std::optional<Value> Machine::execute() {
             Value object = reg(state_.runStack.back().frames.back(), ins.b, ins.line);
             Value index = reg(state_.runStack.back().frames.back(), ins.c, ins.line);
             const auto* slot = std::get_if<int>(&index);
-            if (!slot || *slot < 0 || !std::holds_alternative<Handle>(object) || !std::get<Handle>(object)) {
+            if (!slot || *slot < 0 || !std::holds_alternative<Handle>(object)) {
                 throw RError("address expects a table element", ins.line);
             }
             Reference ref;
             ref.indexed = true;
             ref.container = std::get<Handle>(object);
             ref.index = static_cast<size_t>(*slot);
-            if (auto* table = std::get_if<Table>(&ref.container->data);
-                table && ref.index < table->items.size()) {
-                promoteString(table->items[ref.index]);
-            }
-            write(ins.a, Value(std::make_shared<Object>(ref)));
+            write(ins.a, Value{state_.heap.allocate(ref)});
             bump();
             break;
         }
@@ -812,16 +801,13 @@ std::optional<Value> Machine::execute() {
             Reference ref;
             ref.global = true;
             ref.slot = ins.b;
-            if (ref.slot < state_.globals.size()) promoteString(state_.globals[ref.slot].value);
-            write(ins.a, Value(std::make_shared<Object>(ref)));
+            write(ins.a, Value{state_.heap.allocate(ref)});
             bump();
             break;
         }
         case Op::LoadRef: {
             Value ref = reg(state_.runStack.back().frames.back(), ins.b, ins.line);
-            Value& target = referenced(state_, ref, ins.line);
-            promoteString(target);
-            write(ins.a, target);
+            write(ins.a, referenced(state_, ref, ins.line));
             bump();
             break;
         }
@@ -829,15 +815,7 @@ std::optional<Value> Machine::execute() {
             Value ref = reg(state_.runStack.back().frames.back(), ins.a, ins.line);
             Value incoming = reg(state_.runStack.back().frames.back(), ins.b, ins.line);
             if (!std::holds_alternative<std::monostate>(incoming)) {
-                if (holdsRef(ref)) {
-                    const Reference& target = std::get<Reference>(std::get<Handle>(ref)->data);
-                    if (target.indexed && createsCycle(incoming, target.container)) {
-                        throw RError("cyclic table ownership is not supported", ins.line);
-                    }
-                }
-                Value& target = referenced(state_, ref, ins.line);
-                target = std::move(incoming);
-                promoteString(target);
+                referenced(state_, ref, ins.line) = std::move(incoming);
             }
             bump();
             break;
@@ -851,8 +829,7 @@ std::optional<Value> Machine::execute() {
             Reference ref;
             ref.global = true;
             ref.slot = static_cast<size_t>(*slot);
-            promoteString(state_.globals[ref.slot].value);
-            write(ins.a, Value(std::make_shared<Object>(ref)));
+            write(ins.a, Value{state_.heap.allocate(ref)});
             bump();
             break;
         }
@@ -877,15 +854,21 @@ std::optional<Value> Machine::execute() {
             if (!slot || *slot < 0) throw RError("character index expects a string", ins.line);
             char byte = 0;
             if (const auto* number = std::get_if<int>(&incoming)) byte = static_cast<char>(*number);
-            else if (const auto* text = stringData(incoming)) {
-                if (!text->empty()) byte = (*text)[0];
+            else if (const auto* text = std::get_if<ShortStr>(&incoming)) {
+                if (text->len != 0) byte = text->data[0];
             } else if (state_.typeOf(incoming) == Type::String && !state_.stringOf(incoming).empty()) byte = state_.stringOf(incoming)[0];
-            auto* stored = mutableStringData(object);
-            if (!stored) {
+            if (auto* text = std::get_if<ShortStr>(&object)) {
+                if (static_cast<size_t>(*slot) >= text->len) throw RError("string index out of range", ins.line);
+                text->data[static_cast<size_t>(*slot)] = byte;
+                bump();
+                break;
+            }
+            if (!std::holds_alternative<Handle>(object) || state_.typeOf(object) != Type::String) {
                 throw RError("character index expects a string", ins.line);
             }
-            if (static_cast<size_t>(*slot) >= stored->size()) throw RError("string index out of range", ins.line);
-            (*stored)[static_cast<size_t>(*slot)] = byte;
+            std::string& stored = std::get<std::string>(state_.heap.at(std::get<Handle>(object)));
+            if (static_cast<size_t>(*slot) >= stored.size()) throw RError("string index out of range", ins.line);
+            stored[static_cast<size_t>(*slot)] = byte;
             bump();
             break;
         }
@@ -899,7 +882,7 @@ std::optional<Value> Machine::execute() {
             if (!object) {
                 throw RError("unknown type '" + std::string(type) + "'", ins.line);
             }
-            write(ins.a, Value(std::make_shared<Object>(HostBox{std::move(object)})));
+            write(ins.a, Value{state_.heap.allocate(HostBox{std::move(object)})});
             bump();
             break;
         }
@@ -965,7 +948,7 @@ std::optional<Value> Machine::execute() {
                 next.generation = state_.freshFrameId();
                 next.writesParent = true;
                 next.parentDest = ins.a;
-                next.regs.resize(function->registerCount);
+                next.regs = takeRegs(state_, function->registerCount);
                 const uint16_t count = std::min<uint16_t>(ins.d, function->parameterCount);
                 next.supplied = count;
                 for (uint16_t i = 0; i < count && i < next.regs.size(); ++i) {

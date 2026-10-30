@@ -7,6 +7,7 @@
 #include "smelib_filesystem.h"
 
 // Движок: связывает препроцессор, компиляцию и вызовы VM.
+// Сборка мусора вокруг call. Нативы подключает хост.
 
 #include <algorithm>
 #include <optional>
@@ -19,6 +20,24 @@ namespace {
 std::string render(const State& state, const Value& value, std::vector<Handle>& seen);
 
 }  // анонимное пространство имён
+
+// Корни сборки: глобалы, регистры всех кадров и пины. Значение на стеке C++
+// само по себе корнем не является — его нужно положить в pins или result.
+void State::gatherRoots(std::vector<Value>& out) const {
+    for (const Global& global : globals) {
+        out.push_back(global.value);
+    }
+    for (const RunState& active : runStack) {
+        for (const Frame& frame : active.frames) {
+            out.insert(out.end(), frame.regs.begin(), frame.regs.end());
+        }
+    }
+    out.insert(out.end(), pins.begin(), pins.end());
+    out.push_back(result);
+    for (const Chunk& chunk : functions) {
+        out.insert(out.end(), chunk.interned.begin(), chunk.interned.end());
+    }
+}
 
 size_t State::freshFrameId() {
     size_t id = frameSerial++;
@@ -36,7 +55,10 @@ void State::fail(const std::string& message, int line) {
 }
 
 Value State::makeString(std::string text) {
-    return Value(std::move(text));
+    if (text.size() <= 7) {
+        return shortString(text.data(), text.size());
+    }
+    return Value(heap.allocate(std::move(text)));
 }
 
 Type State::typeOf(const Value& value) const {
@@ -44,16 +66,13 @@ Type State::typeOf(const Value& value) const {
     const auto kind = value.index();
     if (kind == VT_INT) return Type::Int;
     if (kind == VT_FLOAT) return Type::Float;
-    if (kind == VT_STRING) return Type::String;
-    if (kind == VT_SHARED_STRING) {
-        const SharedString& text = std::get<SharedString>(value);
-        return text ? Type::String : Type::Invalid;
-    }
+    if (kind == VT_SSTR) return Type::String;
     if (kind == VT_NULL) return Type::Null;
     if (kind == VT_HANDLE) {
         const Handle* handle = std::get_if<Handle>(&value);
-        if (handle == nullptr || !*handle) return Type::Invalid;
-        const auto stored = (*handle)->data.index();
+        if (handle == nullptr || !heap.check(*handle)) return Type::Invalid;
+        const auto stored = heap.at(*handle).index();
+        if (stored == OT_STR) return Type::String;
         if (stored == OT_TAB) return Type::Table;
         if (stored == OT_OBJ) return Type::Object;
         if (stored == OT_REF) return Type::Ref;
@@ -65,7 +84,8 @@ Type State::typeOf(const Value& value) const {
 }
 
 // Имя для type() и отладки. Код typeof — отдельно, в Engine::typeCode.
-// Пустой shared_ptr не называется null: это некорректное/пустое значение хоста.
+// Мёртвый хендл не называется null: иначе нельзя отличить «скрипт вернул null»
+// от «значение уже собрано».
 std::string_view State::typeName(const Value& value) const {
     switch (typeOf(value)) {
     case Type::Null: return "null";
@@ -83,19 +103,24 @@ std::string_view State::typeName(const Value& value) const {
 }
 
 std::string State::stringOf(const Value& value) const {
-    if (const auto* text = std::get_if<std::string>(&value)) {
-        return *text;
+    if (const auto* text = std::get_if<ShortStr>(&value)) {
+        return std::string(text->data, text->len);
     }
-    if (const auto* text = std::get_if<SharedString>(&value); text && *text) return **text;
-    throw RError("value is not a string");
+    if (typeOf(value) != Type::String) {
+        throw RError("value is not a string");
+    }
+    return std::get<std::string>(heap.at(std::get<Handle>(value)));
 }
 
 size_t State::lengthOf(const Value& value) const {
+    if (const auto* text = std::get_if<ShortStr>(&value)) {
+        return text->len;
+    }
     switch (typeOf(value)) {
     case Type::String:
-        return stringOf(value).size();
+        return std::get<std::string>(heap.at(std::get<Handle>(value))).size();
     case Type::Table:
-        return std::get<Table>(std::get<Handle>(value)->data).items.size();
+        return std::get<Table>(heap.at(std::get<Handle>(value))).items.size();
     default:
         throw RError("len expects a string or a table");
     }
@@ -153,7 +178,10 @@ std::string render(const State& state, const Value& value, std::vector<Handle>& 
     case Type::Bool:
         return std::get<bool>(value) ? "true" : "false";
     case Type::String:
-        return state.stringOf(value);
+        if (const auto* text = std::get_if<ShortStr>(&value)) {
+            return std::string(text->data, text->len);
+        }
+        return std::get<std::string>(state.heap.at(std::get<Handle>(value)));
     case Type::Ref:
         return "ref";
     case Type::Object:
@@ -166,7 +194,7 @@ std::string render(const State& state, const Value& value, std::vector<Handle>& 
     if (std::find(seen.begin(), seen.end(), handle) != seen.end()) return "[...]";
 
     seen.push_back(handle);
-    const Table& table = std::get<Table>(handle->data);
+    const Table& table = std::get<Table>(state.heap.at(handle));
     std::string out = "[";
     for (size_t i = 0; i < table.items.size(); ++i) {
         if (i != 0) out += ", ";
@@ -186,6 +214,7 @@ std::string State::toString(const Value& value) const {
 
 Engine::Engine() : state_(std::make_unique<State>()) {
     state_->files = makeStdFileSystem();
+    state_->heap.setRoots([this](std::vector<Value>& out) { state_->gatherRoots(out); });
 }
 
 Engine::~Engine() = default;
@@ -239,7 +268,7 @@ void Engine::bind(std::string name, std::shared_ptr<HostObject> object) {
             throw RError("global '" + name + "' shadows function '" + name + "'");
         }
     }
-    Value value(std::make_shared<Object>(HostBox{std::move(object)}));
+    Value value(state_->heap.allocate(HostBox{std::move(object)}));
     for (Global& global : state_->globals) {
         if (global.name == name) {
             global.value = std::move(value);
@@ -324,11 +353,22 @@ void Engine::rejectActiveCall() const {
     }
 }
 
-// Общий путь call и callIndex: выполнить и вернуть владеющее значение.
+// Удерживает результат на время сборки и оставляет его в state.result,
+// чтобы хендл дожил до следующего call/resume.
+Value Engine::retain(Value result) {
+    state_->result = std::move(result);
+    state_->pins.push_back(state_->result);
+    state_->heap.collect();
+    state_->pins.pop_back();
+    return state_->result;
+}
+
+// Общий путь call и callIndex: сбросить прошлый результат, выполнить, удержать новый.
 // Ошибка пишется в лог, если хост его подключил, и пробрасывается дальше.
 Value Engine::invoke(size_t index, std::span<const Value> args) {
+    state_->result = null();
     try {
-        return Machine(*this, *state_).run(index, args);
+        return retain(Machine(*this, *state_).run(index, args));
     } catch (const RError& error) {
         if (state_->log) {
             state_->log->message(log::Level::Error, error.what());
@@ -365,8 +405,9 @@ Value Engine::resume() {
     if (!stopped()) {
         throw RError("script is not stopped");
     }
+    state_->result = null();
     try {
-        return Machine(*this, *state_).resume();
+        return retain(Machine(*this, *state_).resume());
     } catch (const RError& error) {
         if (state_->log) {
             state_->log->message(log::Level::Error, error.what());
@@ -462,22 +503,22 @@ Value Engine::callIndex(size_t index, std::span<const Value> args) {
 
 bool Engine::isReference(const Value& value) const {
     const auto* handle = std::get_if<Handle>(&value);
-    if (!handle || !*handle) {
+    if (!handle || !state_->heap.check(*handle)) {
         return false;
     }
-    return std::holds_alternative<Reference>((*handle)->data);
+    return std::holds_alternative<Reference>(state_->heap.at(*handle));
 }
 
 Value Engine::follow(const Value& value) const {
     if (!isReference(value)) {
         return value;
     }
-    const Reference ref = std::get<Reference>(std::get<Handle>(value)->data);
+    const Reference ref = std::get<Reference>(state_->heap.at(std::get<Handle>(value)));
     if (ref.indexed) {
-        if (!ref.container) {
+        if (!state_->heap.check(ref.container)) {
             return null();
         }
-        const StoredObject& object = ref.container->data;
+        const Object& object = state_->heap.at(ref.container);
         const auto* table = std::get_if<Table>(&object);
         if (!table || ref.index >= table->items.size()) {
             return null();
@@ -521,14 +562,23 @@ void Engine::resizeTable(const Value& table, size_t size) {
     if (state_->typeOf(target) != Type::Table) {
         throw RError("tabresize expects a table");
     }
-    Table& items = std::get<Table>(std::get<Handle>(target)->data);
+    Table& items = std::get<Table>(state_->heap.at(std::get<Handle>(target)));
     items.items.resize(size, integer(0));
 }
 
 Value Engine::makeTable(std::vector<Value> items) {
-    return Value(std::make_shared<Object>(Table{std::move(items)}));
+    const size_t mark = state_->pins.size();
+    for (const Value& item : items) {
+        state_->pins.push_back(item);
+    }
+    Value result{state_->heap.allocate(Table{std::move(items)})};
+    state_->pins.resize(mark);
+    return result;
 }
 
-
+void Engine::anchor(const Value& value) { state_->pins.push_back(value); }
+void Engine::clearAnchors() { state_->pins.clear(); }
+size_t Engine::anchorCount() const { return state_->pins.size(); }
+void Engine::resizeAnchors(size_t count) { state_->pins.resize(count); }
 
 }  // пространство имён sme
