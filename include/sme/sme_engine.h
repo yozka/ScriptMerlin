@@ -67,13 +67,9 @@ namespace sme
 		// Вызов по индексу. Индекс вне таблицы функций — ошибка, не тихий 0.
 		Value callIndex(size_t index, std::span<const Value> args);
 		
-		bool isReference(const Value& value) const;
 		// Если value — ссылка, вернуть то, на что она указывает. Иначе само value.
 		// Протухшая ссылка читается как null, без исключения.
 		Value follow(const Value& value) const;
-		// Числовой код типа: 0 null/ссылка/объект, 1 int, 2 float, 3 string,
-		// 4 table, 6 NULL. Тот же код возвращают typeof и ?имя.
-		int32_t typeCode(const Value& value) const;
 		void resizeTable(const Value& table, size_t size);
 		Value makeTable(std::vector<Value> items);
 		
@@ -94,15 +90,6 @@ namespace sme
 		size_t scope() const;
 		// nullopt — функции с таким именем нет.
 		std::optional<size_t> functionScope(std::string_view name) const;
-		
-		std::string toString(const Value& value) const;
-		// Имя типа для type() и отладки. NULL — "pointer", пустой shared_ptr — "invalid".
-		std::string_view typeName(const Value& value) const;
-		Type typeOf(const Value& value) const;
-		std::string stringOf(const Value& value) const;
-		size_t lengthOf(const Value& value) const;
-		int integerOf(const Value& value) const;
-		float floatOf(const Value& value) const;
 		
 	public:
 		void Log(const log::Level level, const std::string& text);

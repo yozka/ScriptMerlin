@@ -54,7 +54,7 @@ int main()
         if (!left || !right) {
             throw sme::RError("add expects integer arguments");
         }
-        return sme::integer(*left + *right);
+        return sme::Value::Integer(*left + *right);
     });
 
     engine.loadSource(R"(
@@ -64,7 +64,7 @@ int main()
     )");
 
     const sme::Value result = engine.call("main");
-    std::cout << engine.toString(result) << '\n';
+    std::cout << result.ToString() << '\n';
 }
 ```
 

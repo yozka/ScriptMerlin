@@ -40,12 +40,12 @@ void sme::library::InstallGS(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "gs_sgn expects 1 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		const int value = engine.integerOf(args[0]);
-		if (value > 0) return Value::integer(1);
-		if (value < 0) return Value::integer(-1);
-		return Value::integer(0);
+		const int value = args[0].AsInteger();
+		if (value > 0) return Value::Integer(1);
+		if (value < 0) return Value::Integer(-1);
+		return Value::Integer(0);
 	});
 	
 	
@@ -53,16 +53,16 @@ void sme::library::InstallGS(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "gs_abs expects 1 argument");
-			return Value::null();
+			return Value::Null();
 		}
 		if (const auto* integerValue = std::get_if<int>(&args[0])) {
 			if (*integerValue == std::numeric_limits<int>::min()) {
 				engine.Error(error::Code::FUNCTION_ARGUMENTS, "gs_abs overflow");
-				return Value::null();
+				return Value::Null();
 			}
-			return Value::integer(std::abs(*integerValue));
+			return Value::Integer(std::abs(*integerValue));
 		}
-		return Value::real(engine.floatOf(args[0]));
+		return Value::Real(args[0].AsFloat());
 	});
 	
 	
@@ -70,9 +70,9 @@ void sme::library::InstallGS(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "gs_floor expects 1 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		return Value::real(std::floor(engine.floatOf(args[0])));
+		return Value::Real(std::floor(args[0].AsFloat()));
 	});
 	
 	
@@ -80,9 +80,9 @@ void sme::library::InstallGS(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "gs_ceil expects 1 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		return Value::real(std::ceil(engine.floatOf(args[0])));
+		return Value::Real(std::ceil(args[0].AsFloat()));
 	});
 	
 	
@@ -90,9 +90,9 @@ void sme::library::InstallGS(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "gs_round expects 1 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		return Value::real(std::round(engine.floatOf(args[0])));
+		return Value::Real(std::round(args[0].AsFloat()));
 	});
 	
 	
@@ -100,11 +100,11 @@ void sme::library::InstallGS(Engine& engine)
 	{
 		if (args.size() != 2) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "gs_trunc expects 2 arguments");
-			return Value::null();
+			return Value::Null();
 		}
-		auto value = engine.floatOf(args[0]);
-		auto scale = std::pow(10.0, engine.floatOf(args[1]));
-		return Value::real(std::trunc(value * scale) / scale);
+		auto value = args[0].AsFloat();
+		auto scale = std::pow(10.0, args[1].AsFloat());
+		return Value::Real(std::trunc(value * scale) / scale);
 	});
 	
 	
@@ -112,9 +112,9 @@ void sme::library::InstallGS(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "gs_exp expects 1 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		return Value::real(std::exp(engine.floatOf(args[0])));
+		return Value::Real(std::exp(args[0].AsFloat()));
 	});
 	
 	
@@ -122,9 +122,9 @@ void sme::library::InstallGS(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "gs_log expects 1 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		return Value::real(std::log(engine.floatOf(args[0])));
+		return Value::Real(std::log(args[0].AsFloat()));
 	});
 	
 	
@@ -132,9 +132,9 @@ void sme::library::InstallGS(Engine& engine)
 	{
 		if (args.size() != 2) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "gs_pow expects 2 arguments");
-			return Value::null();
+			return Value::Null();
 		}
-		return Value::real(std::pow(engine.floatOf(args[0]), engine.floatOf(args[1])));
+		return Value::Real(std::pow(args[0].AsFloat(), args[1].AsFloat()));
 	});
 	
 	
@@ -142,14 +142,14 @@ void sme::library::InstallGS(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "gs_sqrt expects 1 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		const float value = engine.floatOf(args[0]);
+		const float value = args[0].AsFloat();
 		if (value < 0) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "gs_sqrt expects a non-negative number");
-			return Value::null();
+			return Value::Null();
 		}
-		return Value::real(std::sqrt(value));
+		return Value::Real(std::sqrt(value));
 	});
 	
 	
@@ -157,9 +157,9 @@ void sme::library::InstallGS(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "gs_sin expects 1 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		return Value::real(std::sin(engine.floatOf(args[0])));
+		return Value::Real(std::sin(args[0].AsFloat()));
 	});
 	
 	
@@ -167,9 +167,9 @@ void sme::library::InstallGS(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "gs_cos expects 1 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		return Value::real(std::cos(engine.floatOf(args[0])));
+		return Value::Real(std::cos(args[0].AsFloat()));
 	});
 	
 	
@@ -177,9 +177,9 @@ void sme::library::InstallGS(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "gs_tan expects 1 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		return Value::real(std::tan(engine.floatOf(args[0])));
+		return Value::Real(std::tan(args[0].AsFloat()));
 	});
 	
 	
@@ -187,9 +187,9 @@ void sme::library::InstallGS(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "gs_asin expects 1 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		return Value::real(std::asin(engine.floatOf(args[0])));
+		return Value::Real(std::asin(args[0].AsFloat()));
 	});
 	
 	
@@ -197,9 +197,9 @@ void sme::library::InstallGS(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "gs_acos expects 1 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		return Value::real(std::acos(engine.floatOf(args[0])));
+		return Value::Real(std::acos(args[0].AsFloat()));
 	});
 	
 	
@@ -207,9 +207,9 @@ void sme::library::InstallGS(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "gs_atan expects 1 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		return Value::real(std::atan(engine.floatOf(args[0])));
+		return Value::Real(std::atan(args[0].AsFloat()));
 	});
 	
 	
@@ -217,9 +217,9 @@ void sme::library::InstallGS(Engine& engine)
 	{
 		if (args.size() != 2) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "gs_atan2 expects 1 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		return Value::real(std::atan2(engine.floatOf(args[0]), engine.floatOf(args[1])));
+		return Value::Real(std::atan2(args[0].AsFloat(), args[1].AsFloat()));
 	});
 	
 	
@@ -227,12 +227,12 @@ void sme::library::InstallGS(Engine& engine)
 	{
 		if (args.size() != 2) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "gs_min expects 2 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		if (std::holds_alternative<int>(args[0]) && std::holds_alternative<int>(args[1])) {
-			return Value::integer(static_cast<int>(std::min(engine.integerOf(args[0]), engine.integerOf(args[1]))));
+		if (args[0].IsInteger() && args[1].IsInteger()) {
+			return Value::Integer(std::min(args[0].AsInteger(), args[1].AsInteger()));
 		}
-		return Value::real(std::min(engine.floatOf(args[0]), engine.floatOf(args[1])));
+		return Value::Real(std::min(args[0].AsFloat(), args[1].AsFloat()));
 	});
 	
 	
@@ -240,12 +240,12 @@ void sme::library::InstallGS(Engine& engine)
 	{
 		if (args.size() != 2) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "gs_max expects 2 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		if (std::holds_alternative<int>(args[0]) && std::holds_alternative<int>(args[1])) {
-			return Value::integer(static_cast<int>(std::max(engine.integerOf(args[0]), engine.integerOf(args[1]))));
+		if (args[0].IsInteger() && args[1].IsInteger()) {
+			return Value::Integer(std::max(args[0].AsInteger(), args[1].AsInteger()));
 		}
-		return Value::real(std::max(engine.floatOf(args[0]), engine.floatOf(args[1])));
+		return Value::Real(std::max(args[0].AsFloat(), args[1].AsFloat()));
 	});
 	
 	
@@ -253,38 +253,38 @@ void sme::library::InstallGS(Engine& engine)
 	{
 		const auto now = std::chrono::system_clock::now().time_since_epoch();
 		const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(now).count();
-		return Value::integer(static_cast<int>(seconds));
+		return Value::Integer(static_cast<int>(seconds));
 	});
 	
 	
 	engine.RegisterNative("gs_random", [](Engine& engine, std::span<const Value> args)
 	{
 		if (args.empty()) {
-			return Value::integer(randomInt(0, std::numeric_limits<int>::max()));
+			return Value::Integer(randomInt(0, std::numeric_limits<int>::max()));
 		}
 		if (args.size() == 1) {
-			return Value::integer(randomInt(0, engine.integerOf(args[0])));
+			return Value::Integer(randomInt(0, args[0].AsInteger()));
 		}
 		if (args.size() == 2) {
-			return Value::integer(randomInt(engine.integerOf(args[0]), engine.integerOf(args[1])));
+			return Value::Integer(randomInt(args[0].AsInteger(), args[1].AsInteger()));
 		}
 		engine.Error(error::Code::FUNCTION_ARGUMENTS, "gs_random expects 0, 1 or 2 argument(s)");
-		return Value::null();
+		return Value::Null();
 	});
 	
 	
-	engine.RegisterNative("gs_rand", [](Engine&, std::span<const Value>) { return Value::integer(0); });
+	engine.RegisterNative("gs_rand", [](Engine&, std::span<const Value>) { return Value::Integer(0); });
 	
 	
 	engine.RegisterNative("gs_fid", [](Engine& engine, std::span<const Value> args)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "gs_fid expects 1 argument");
-			return Value::null();
+			return Value::Null();
 		}
 
-		const auto index = engine.findFunction(engine.stringOf(args[0]));
-		return Value::integer(index ? static_cast<int>(*index) : -1);
+		const auto index = engine.findFunction(args[0].AsString());
+		return Value::Integer(index ? static_cast<int>(*index) : -1);
 	});
 	
 	
@@ -292,12 +292,10 @@ void sme::library::InstallGS(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "gs_gid expects 1 argument");
-			return Value::null();
+			return Value::Null();
 		}
 
-		const auto index = engine.findGlobal(engine.stringOf(args[0]));
-		return Value::integer(index ? static_cast<int>(*index) : -1);
+		const auto index = engine.findGlobal(args[0].AsString());
+		return Value::Integer(index ? static_cast<int>(*index) : -1);
 	});
 }
-
-

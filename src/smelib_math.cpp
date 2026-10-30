@@ -18,16 +18,16 @@ void sme::library::InstallMath(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "abs expects 1 argument");
-			return Value::null();
+			return Value::Null();
 		}
 		if (const auto* integerValue = std::get_if<int>(&args[0])) {
 			if (*integerValue == std::numeric_limits<int>::min()) {
 				engine.Error(error::Code::FUNCTION_ARGUMENTS, "abs overflow");
-				return Value::null();
+				return Value::Null();
 			}
-			return Value::integer(std::abs(*integerValue));
+			return Value::Integer(std::abs(*integerValue));
 		}
-		return Value::real(engine.floatOf(args[0]));
+		return Value::Real(args[0].AsFloat());
 	});
 	
 	
@@ -35,9 +35,9 @@ void sme::library::InstallMath(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "floor expects 1 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		return Value::real(std::floor(engine.floatOf(args[0])));
+		return Value::Real(std::floor(args[0].AsFloat()));
 	});
 	
 	
@@ -45,9 +45,9 @@ void sme::library::InstallMath(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "ceil expects 1 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		return Value::real(std::ceil(engine.floatOf(args[0])));
+		return Value::Real(std::ceil(args[0].AsFloat()));
 	});
 	
 	
@@ -55,9 +55,9 @@ void sme::library::InstallMath(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "round expects 1 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		return Value::real(std::round(engine.floatOf(args[0])));
+		return Value::Real(std::round(args[0].AsFloat()));
 	});
 	
 	
@@ -65,14 +65,14 @@ void sme::library::InstallMath(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "sqrt expects 1 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		const float value = engine.floatOf(args[0]);
+		const float value = args[0].AsFloat();
 		if (value < 0) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "sqrt expects a non-negative number");
-			return Value::null();
+			return Value::Null();
 		}
-		return Value::real(std::sqrt(value));
+		return Value::Real(std::sqrt(value));
 	});
 	
 	
@@ -80,9 +80,9 @@ void sme::library::InstallMath(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "sin expects 1 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		return Value::real(std::sin(engine.floatOf(args[0])));
+		return Value::Real(std::sin(args[0].AsFloat()));
 	});
 	
 	
@@ -90,9 +90,9 @@ void sme::library::InstallMath(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "cos expects 1 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		return Value::real(std::cos(engine.floatOf(args[0])));
+		return Value::Real(std::cos(args[0].AsFloat()));
 	});
 	
 	
@@ -100,9 +100,9 @@ void sme::library::InstallMath(Engine& engine)
 	{
 		if (args.size() != 2) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "pow expects 2 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		return Value::real(std::pow(engine.floatOf(args[0]), engine.floatOf(args[1])));
+		return Value::Real(std::pow(args[0].AsFloat(), args[1].AsFloat()));
 	});
 	
 	
@@ -110,12 +110,12 @@ void sme::library::InstallMath(Engine& engine)
 	{
 		if (args.size() != 2) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "min expects 2 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		if (std::holds_alternative<int>(args[0]) && std::holds_alternative<int>(args[1])) {
-			return Value::integer(static_cast<int>(std::min(engine.integerOf(args[0]), engine.integerOf(args[1]))));
+		if (args[0].IsInteger() && args[1].IsInteger()) {
+			return Value::Integer(std::min(args[0].AsInteger(), args[1].AsInteger()));
 		}
-		return Value::real(std::min(engine.floatOf(args[0]), engine.floatOf(args[1])));
+		return Value::Real(std::min(args[0].AsFloat(), args[1].AsFloat()));
 	});
 	
 	
@@ -123,14 +123,12 @@ void sme::library::InstallMath(Engine& engine)
 	{
 		if (args.size() != 2) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "max expects 2 argument");
-			return Value::null();
+			return Value::Null();
 		}
-		if (std::holds_alternative<int>(args[0]) && std::holds_alternative<int>(args[1])) {
-			return Value::integer(static_cast<int>(std::max(engine.integerOf(args[0]), engine.integerOf(args[1]))));
+		if (args[0].IsInteger() && args[1].IsInteger()) {
+			return Value::Integer(std::max(args[0].AsInteger(), args[1].AsInteger()));
 		}
-		return Value::real(std::max(engine.floatOf(args[0]), engine.floatOf(args[1])));
+		return Value::Real(std::max(args[0].AsFloat(), args[1].AsFloat()));
 	});
 	
 }
-
-

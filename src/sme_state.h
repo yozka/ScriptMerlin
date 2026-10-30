@@ -149,11 +149,6 @@ struct State {
     uint32_t freshReferenceId();
     void fail(const std::string& message, int line = 0);
 
-    std::string toString(const Value& value) const;
-    std::string_view typeName(const Value& value) const;
-    Type typeOf(const Value& value) const;
-    std::string stringOf(const Value& value) const;
-    size_t lengthOf(const Value& value) const;
     bool truthy(const Value& value) const;
 
     // Вид живёт в пуле констант chunk, пока этот chunk не заменят.

@@ -14,7 +14,7 @@ class Counter : public sme::HostObject {
 public:
     sme::Value get(sme::Engine& engine, std::string_view name) override {
         if (name == "value") {
-            return sme::Value::integer(value_);
+            return sme::Value::Integer(value_);
         }
         return HostObject::get(engine, name);
     }
@@ -33,7 +33,7 @@ public:
 				return {};
             }
             value_ += std::get<int>(args[0]);
-            return sme::Value::integer(value_);
+            return sme::Value::Integer(value_);
         }
         return HostObject::call(engine, name, args);
     }
@@ -59,6 +59,6 @@ fn main() {
 )mln");
 
     const sme::Value result = engine.call("main");
-    std::cout << engine.toString(result) << "\n";
+    std::cout << result.ToString() << "\n";
     return std::get<int>(result) == 43 ? 0 : 1;
 }

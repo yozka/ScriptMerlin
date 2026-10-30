@@ -25,85 +25,66 @@ inline Value& fastReg(Frame& frame, size_t index) {
     return frame.regs[index];
 }
 
-struct Number {
-    bool isFloat = false;
-    double value = 0;
-};
+int checkedIntAdd(int x, int y, int line) {
+    if ((y > 0 && x > std::numeric_limits<int>::max() - y) ||
+        (y < 0 && x < std::numeric_limits<int>::min() - y)) {
+        throw RError("integer overflow", line);
+    }
+    return x + y;
+}
 
-std::optional<Number> asNumber(const Value& value) {
-    if (const auto* integer = std::get_if<int>(&value)) {
-        return Number{false, static_cast<double>(*integer)};
+int checkedIntSub(int x, int y, int line) {
+    if ((y < 0 && x > std::numeric_limits<int>::max() + y) ||
+        (y > 0 && x < std::numeric_limits<int>::min() + y)) {
+        throw RError("integer overflow", line);
     }
-    if (const auto* real = std::get_if<float>(&value)) {
-        return Number{true, static_cast<double>(*real)};
+    return x - y;
+}
+
+int checkedIntMul(int x, int y, int line) {
+    if (x == 0 || y == 0) return 0;
+    if ((x == -1 && y == std::numeric_limits<int>::min()) ||
+        (y == -1 && x == std::numeric_limits<int>::min())) {
+        throw RError("integer overflow", line);
     }
-    if (const auto* flag = std::get_if<bool>(&value)) {
-        return Number{false, *flag ? 1.0 : 0.0};
+    if ((x > 0 && y > 0 && x > std::numeric_limits<int>::max() / y) ||
+        (x > 0 && y < 0 && y < std::numeric_limits<int>::min() / x) ||
+        (x < 0 && y > 0 && x < std::numeric_limits<int>::min() / y) ||
+        (x < 0 && y < 0 && x < std::numeric_limits<int>::max() / y)) {
+        throw RError("integer overflow", line);
     }
-    return std::nullopt;
+    return x * y;
 }
 
 Value intBinary(Op op, int x, int y, int line) {
-#if !defined(__clang__) && !defined(__GNUC__)
-    auto overflow = [&](int64_t z) {
-        if (z > std::numeric_limits<int>::max() || z < std::numeric_limits<int>::min()) {
-            throw RError("integer overflow", line);
-        }
-        return Value::integer(static_cast<int>(z));
-    };
-#endif
     switch (op) {
-    case Op::Add: {
-#if defined(__clang__) || defined(__GNUC__)
-        int result = 0;
-        if (__builtin_add_overflow(x, y, &result)) throw RError("integer overflow", line);
-        return Value::integer(result);
-#else
-        return overflow(static_cast<int64_t>(x) + y);
-#endif
-    }
-    case Op::Sub: {
-#if defined(__clang__) || defined(__GNUC__)
-        int result = 0;
-        if (__builtin_sub_overflow(x, y, &result)) throw RError("integer overflow", line);
-        return Value::integer(result);
-#else
-        return overflow(static_cast<int64_t>(x) - y);
-#endif
-    }
-    case Op::Mul: {
-#if defined(__clang__) || defined(__GNUC__)
-        int result = 0;
-        if (__builtin_mul_overflow(x, y, &result)) throw RError("integer overflow", line);
-        return Value::integer(result);
-#else
-        return overflow(static_cast<int64_t>(x) * y);
-#endif
-    }
+    case Op::Add: return Value::Integer(checkedIntAdd(x, y, line));
+    case Op::Sub: return Value::Integer(checkedIntSub(x, y, line));
+    case Op::Mul: return Value::Integer(checkedIntMul(x, y, line));
     case Op::Div:
         if (y == 0) throw RError("division by zero", line);
         if (x == std::numeric_limits<int>::min() && y == -1) throw RError("integer overflow", line);
-        return Value::integer(x / y);
+        return Value::Integer(x / y);
     case Op::Mod:
         if (y == 0) throw RError("division by zero", line);
         if (x == std::numeric_limits<int>::min() && y == -1) throw RError("integer overflow", line);
-        return Value::integer(x % y);
-    case Op::BitAnd: return Value::integer(x & y);
-    case Op::BitOr: return Value::integer(x | y);
-    case Op::BitXor: return Value::integer(x ^ y);
+        return Value::Integer(x % y);
+    case Op::BitAnd: return Value::Integer(x & y);
+    case Op::BitOr: return Value::Integer(x | y);
+    case Op::BitXor: return Value::Integer(x ^ y);
     case Op::Shl:
     case Op::Shr:
         if (y < 0 || y >= 31) throw RError("shift out of range", line);
-        if (op == Op::Shl) return Value::integer(static_cast<int>(static_cast<uint32_t>(x) << y));
-        return Value::integer(static_cast<int>(static_cast<uint32_t>(x) >> static_cast<uint32_t>(y)));
-    case Op::CmpEq: return Value::integer(x == y ? 1 : 0);
-    case Op::CmpNe: return Value::integer(x != y ? 1 : 0);
-    case Op::CmpLt: return Value::integer(x < y ? 1 : 0);
-    case Op::CmpLe: return Value::integer(x <= y ? 1 : 0);
-    case Op::CmpGt: return Value::integer(x > y ? 1 : 0);
-    case Op::CmpGe: return Value::integer(x >= y ? 1 : 0);
-    case Op::LogicAnd: return Value::integer((x != 0 && y != 0) ? 1 : 0);
-    case Op::LogicOr: return Value::integer((x != 0 || y != 0) ? 1 : 0);
+        if (op == Op::Shl) return Value::Integer(static_cast<int>(static_cast<uint32_t>(x) << y));
+        return Value::Integer(static_cast<int>(static_cast<uint32_t>(x) >> static_cast<uint32_t>(y)));
+    case Op::CmpEq: return Value::Integer(x == y ? 1 : 0);
+    case Op::CmpNe: return Value::Integer(x != y ? 1 : 0);
+    case Op::CmpLt: return Value::Integer(x < y ? 1 : 0);
+    case Op::CmpLe: return Value::Integer(x <= y ? 1 : 0);
+    case Op::CmpGt: return Value::Integer(x > y ? 1 : 0);
+    case Op::CmpGe: return Value::Integer(x >= y ? 1 : 0);
+    case Op::LogicAnd: return Value::Integer((x != 0 && y != 0) ? 1 : 0);
+    case Op::LogicOr: return Value::Integer((x != 0 || y != 0) ? 1 : 0);
     default:
         throw RError("internal operator fault", line);
     }
@@ -139,27 +120,27 @@ Value Machine::materialize(const Chunk& chunk, size_t constant, int line) {
         throw RError("internal constant fault", line);
     }
     const Constant& value = chunk.constants[constant];
-    if (std::holds_alternative<std::monostate>(value)) return Value::null();
-    if (const auto* integer = std::get_if<int>(&value)) return sme::Value::integer(*integer);
-    if (const auto* real = std::get_if<float>(&value)) return sme::Value::real(*real);
-    if (const auto* flag = std::get_if<bool>(&value)) return Value::boolean(*flag);
+    if (std::holds_alternative<std::monostate>(value)) return Value::Null();
+    if (const auto* integer = std::get_if<int>(&value)) return sme::Value::Integer(*integer);
+    if (const auto* real = std::get_if<float>(&value)) return sme::Value::Real(*real);
+    if (const auto* flag = std::get_if<bool>(&value)) return Value::Boolean(*flag);
     if (const auto* text = std::get_if<std::string>(&value)) {
         if (chunk.interned.size() != chunk.constants.size()) {
             chunk.interned.resize(chunk.constants.size());
         }
         Value& cached = chunk.interned[constant];
-        if (!std::holds_alternative<std::monostate>(cached)) return cached;
-        cached = Value::string(*text);
+        if (!cached.IsNull()) return cached;
+        cached = Value::String(*text);
         return cached;
     }
-    if (std::holds_alternative<std::nullptr_t>(value)) return Value::pointer();
+    if (std::holds_alternative<std::nullptr_t>(value)) return Value::Pointer();
     throw RError("internal constant fault", line);
 }
 
 bool Machine::equals(const Value& lhs, const Value& rhs) {
-    if (auto left = asNumber(lhs)) {
-        if (auto right = asNumber(rhs)) {
-            return left->value == right->value;
+    if (auto left = lhs.AsNumber()) {
+        if (auto right = rhs.AsNumber()) {
+            return *left == *right;
         }
     }
     auto readText = [&](const Value& value, std::string& out) {
@@ -183,8 +164,7 @@ bool Machine::equals(const Value& lhs, const Value& rhs) {
     if (lhs.index() != rhs.index()) {
         return false;
     }
-    if (std::holds_alternative<std::monostate>(lhs)) return true;
-    if (std::holds_alternative<std::nullptr_t>(lhs)) return true;
+    if (lhs.IsNull() || lhs.IsPointer()) return true;
     if (const auto* flag = std::get_if<bool>(&lhs)) return *flag == std::get<bool>(rhs);
     if (const auto* handle = std::get_if<Handle>(&lhs)) {
         const Handle& other = std::get<Handle>(rhs);
@@ -213,34 +193,34 @@ bool Machine::equals(const Value& lhs, const Value& rhs) {
 // NaN ни меньше, ни больше, ни равен. == идёт через equals и для NaN уже ложен;
 // <= и >= без этой проверки считали бы «не меньше и не больше» равенством.
 int Machine::compare(const Value& lhs, const Value& rhs, int line) {
-    auto left = asNumber(lhs);
-    auto right = asNumber(rhs);
+    auto left = lhs.AsNumber();
+    auto right = rhs.AsNumber();
     if (!left || !right) {
         throw RError("comparison expects numbers", line);
     }
-    if (left->value < right->value) return -1;
-    if (left->value > right->value) return 1;
+    if (*left < *right) return -1;
+    if (*left > *right) return 1;
     return 0;
 }
 
 Value Machine::unary(Op op, const Value& value, int line) {
     if (op == Op::Not) {
-        return Value::integer(state_.truthy(value) ? 0 : 1);
+        return Value::Integer(state_.truthy(value) ? 0 : 1);
     }
     if (op == Op::Neg) {
         if (const auto* integer = std::get_if<int>(&value)) {
             if (*integer == std::numeric_limits<int>::min()) {
                 throw RError("integer overflow", line);
             }
-            return sme::Value::integer(-*integer);
+            return sme::Value::Integer(-*integer);
         }
         if (const auto* real = std::get_if<float>(&value)) {
-            return sme::Value::real(-*real);
+            return sme::Value::Real(-*real);
         }
         throw RError("negation expects a number", line);
     }
     if (const auto* integer = std::get_if<int>(&value)) {
-        return sme::Value::integer(~*integer);
+        return sme::Value::Integer(~*integer);
     }
     throw RError("bitwise not expects an int", line);
 }
@@ -253,9 +233,9 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
         bool left = state_.truthy(lhs);
         bool right = state_.truthy(rhs);
         bool result = op == Op::LogicAnd ? (left && right) : (left || right);
-        return Value::integer(result ? 1 : 0);
+        return Value::Integer(result ? 1 : 0);
     }
-    if (op == Op::Add && state_.typeOf(lhs) == Type::Table && state_.typeOf(rhs) == Type::Table) {
+    if (op == Op::Add && lhs.IsTable() && rhs.IsTable()) {
         const TableHandle& left = std::get<TableHandle>(lhs);
         const TableHandle& right = std::get<TableHandle>(rhs);
         auto joined = std::make_shared<Table>(*left);
@@ -268,25 +248,25 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
         if (leftText || rightText) {
             std::string leftStorage;
             std::string rightStorage;
-            const std::string& left = leftText ? *leftText : (leftStorage = state_.toString(lhs));
-            const std::string& right = rightText ? *rightText : (rightStorage = state_.toString(rhs));
+            const std::string& left = leftText ? *leftText : (leftStorage = lhs.ToString());
+            const std::string& right = rightText ? *rightText : (rightStorage = rhs.ToString());
             std::string result;
             result.reserve(left.size() + right.size());
             result.append(left);
             result.append(right);
-            return Value::string(std::move(result));
+            return Value::String(std::move(result));
         }
     }
-    if (op == Op::CmpEq) return Value::integer(equals(lhs, rhs) ? 1 : 0);
-    if (op == Op::CmpNe) return Value::integer(equals(lhs, rhs) ? 0 : 1);
+    if (op == Op::CmpEq) return Value::Integer(equals(lhs, rhs) ? 1 : 0);
+    if (op == Op::CmpNe) return Value::Integer(equals(lhs, rhs) ? 0 : 1);
     if (op == Op::CmpLt || op == Op::CmpLe || op == Op::CmpGt || op == Op::CmpGe) {
-        auto left = asNumber(lhs);
-        auto right = asNumber(rhs);
+        auto left = lhs.AsNumber();
+        auto right = rhs.AsNumber();
         if (!left || !right) {
             throw RError("comparison expects numbers", line);
         }
-        if (std::isnan(left->value) || std::isnan(right->value)) {
-            return Value::integer(0);
+        if (std::isnan(*left) || std::isnan(*right)) {
+            return Value::Integer(0);
         }
         int order = compare(lhs, rhs, line);
         bool result = false;
@@ -297,17 +277,17 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
         case Op::CmpGe: result = order >= 0; break;
         default: break;
         }
-        return Value::integer(result ? 1 : 0);
+        return Value::Integer(result ? 1 : 0);
     }
 
-    auto left = asNumber(lhs);
-    auto right = asNumber(rhs);
+    auto left = lhs.AsNumber();
+    auto right = rhs.AsNumber();
     if (!left || !right) {
         throw RError("operator expects numbers", line);
     }
-    const bool floats = left->isFloat || right->isFloat;
-    const double a = left->value;
-    const double b = right->value;
+    const bool floats = lhs.IsFloat() || rhs.IsFloat();
+    const double a = *left;
+    const double b = *right;
 
     auto bothInts = [&]() -> std::optional<std::pair<int, int>> {
         if (floats) return std::nullopt;
@@ -331,13 +311,13 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
         if (z > std::numeric_limits<int>::max() || z < std::numeric_limits<int>::min()) {
             throw RError("integer overflow", line);
         }
-        return Value::integer(static_cast<int>(z));
+        return Value::Integer(static_cast<int>(z));
     }
 
     switch (op) {
-    case Op::Add: return Value::real(static_cast<float>(a + b));
-    case Op::Sub: return Value::real(static_cast<float>(a - b));
-    case Op::Mul: return Value::real(static_cast<float>(a * b));
+    case Op::Add: return Value::Real(static_cast<float>(a + b));
+    case Op::Sub: return Value::Real(static_cast<float>(a - b));
+    case Op::Mul: return Value::Real(static_cast<float>(a * b));
     case Op::Div: {
         // INT_MIN / -1 непредставимо в int32. То же проверяется у остатка.
         if (b == 0) throw RError("division by zero", line);
@@ -346,9 +326,9 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
             if (pair.first == std::numeric_limits<int>::min() && pair.second == -1) {
                 throw RError("integer overflow", line);
             }
-            return Value::integer(pair.first / pair.second);
+            return Value::Integer(pair.first / pair.second);
         }
-        return Value::real(static_cast<float>(a / b));
+        return Value::Real(static_cast<float>(a / b));
     }
     case Op::Mod: {
         if (b == 0) throw RError("division by zero", line);
@@ -357,9 +337,9 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
             if (pair.first == std::numeric_limits<int>::min() && pair.second == -1) {
                 throw RError("integer overflow", line);
             }
-            return Value::integer(pair.first % pair.second);
+            return Value::Integer(pair.first % pair.second);
         }
-        return Value::real(static_cast<float>(std::fmod(a, b)));
+        return Value::Real(static_cast<float>(std::fmod(a, b)));
     }
     case Op::BitAnd:
     case Op::BitOr:
@@ -371,18 +351,18 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
         int x = pair->first;
         int y = pair->second;
         switch (op) {
-        case Op::BitAnd: return Value::integer(x & y);
-        case Op::BitOr: return Value::integer(x | y);
-        case Op::BitXor: return Value::integer(x ^ y);
+        case Op::BitAnd: return Value::Integer(x & y);
+        case Op::BitOr: return Value::Integer(x | y);
+        case Op::BitXor: return Value::Integer(x ^ y);
         case Op::Shl:
         case Op::Shr:
             // Сдвиг логический, через uint32. Бит 31 поставить нельзя: счётчик только 0..30.
             // Поэтому -8 >> 1 — это 2147483644, а не арифметические -4.
             if (y < 0 || y >= 31) throw RError("shift out of range", line);
             if (op == Op::Shl) {
-                return Value::integer(static_cast<int>(static_cast<uint32_t>(x) << y));
+                return Value::Integer(static_cast<int>(static_cast<uint32_t>(x) << y));
             }
-            return Value::integer(static_cast<int>(static_cast<uint32_t>(x) >> static_cast<uint32_t>(y)));
+            return Value::Integer(static_cast<int>(static_cast<uint32_t>(x) >> static_cast<uint32_t>(y)));
         default: break;
         }
         break;
@@ -398,7 +378,7 @@ Value Machine::run(size_t function, std::span<const Value> args) {
         throw RError("unknown function");
     }
     const Chunk& chunk = state_.functions[function];
-    if (state_.runStack.size() >= 64) {
+    if (state_.runStack.size() >= SME_MAX_CALL_DEPTH) {
         throw RError("script call nested too deeply");
     }
 
@@ -428,9 +408,9 @@ Value Machine::run(size_t function, std::span<const Value> args) {
     std::optional<Value> result = execute();
     if (!result) {
         guard.keep();
-        return Value::null();
+        return Value::Null();
     }
-    return *result;
+    return result.value();
 }
 
 Value Machine::resume() {
@@ -451,16 +431,12 @@ Value Machine::resume() {
     std::optional<Value> result = execute();
     if (!result) {
         guard.keep();
-        return Value::null();
+        return Value::Null();
     }
-    return *result;
+    return result.value();
 }
 
 namespace {
-
-bool holdsRef(const Value& value) {
-    return value.isReference();
-}
 
 void promoteString(Value& value) {
     if (auto* text = std::get_if<std::string>(&value)) {
@@ -507,7 +483,7 @@ bool createsCycle(const Value& value, const TableHandle& destination) {
 }
 
 Value& referenced(State& state, const Value& value, int line) {
-    if (!holdsRef(value)) {
+    if (!value.IsReference()) {
         throw RError("value is not a reference", line);
     }
     if (const auto* link = std::get_if<SharedValue>(&value)) {
@@ -594,7 +570,7 @@ std::optional<Value> Machine::execute() {
         switch (ins.op) {
         case Op::LoadConst: {
             const Constant& constant = chunk.constants[ins.b];
-            if (const auto* number = std::get_if<int>(&constant)) frame.regs[ins.a] = Value::integer(*number);
+            if (const auto* number = std::get_if<int>(&constant)) frame.regs[ins.a] = Value::Integer(*number);
             else frame.regs[ins.a] = materialize(chunk, ins.b, ins.line);
             frame.ip++;
             break;
@@ -603,7 +579,7 @@ std::optional<Value> Machine::execute() {
             // null не затирает регистр. Так a = maybe(0) оставляет прежнее a,
             // если maybe вернул null.
             Value incoming = fastReg(frame, ins.b);
-            if (!std::holds_alternative<std::monostate>(incoming)) {
+            if (!incoming.IsNull()) {
                 write(ins.a, std::move(incoming));
             }
             bump();
@@ -622,7 +598,7 @@ std::optional<Value> Machine::execute() {
         case Op::StoreGlobal: {
             if (ins.a >= state_.globals.size()) throw RError("internal global fault", ins.line);
             Value incoming = fastReg(frame, ins.b);
-            if (!std::holds_alternative<std::monostate>(incoming)) {
+            if (!incoming.IsNull()) {
                 state_.globals[ins.a].value = std::move(incoming);
             }
             bump();
@@ -633,7 +609,7 @@ std::optional<Value> Machine::execute() {
             bump();
             return std::nullopt;
         case Op::Typeof:
-            write(ins.a, Value::integer(engine_.typeCode(fastReg(frame, ins.b))));
+            write(ins.a, Value::Integer(fastReg(frame, ins.b).TypeCode()));
             bump();
             break;
         case Op::Add: case Op::Sub: case Op::Mul: case Op::Div: case Op::Mod:
@@ -657,7 +633,7 @@ std::optional<Value> Machine::execute() {
             if (lhs.index() == VT_INT) {
                 frame.regs[ins.a] = intBinary(op, std::get<int>(lhs), imm, ins.line);
             } else {
-                frame.regs[ins.a] = binary(op, lhs, Value::integer(imm), ins.line);
+                frame.regs[ins.a] = binary(op, lhs, Value::Integer(imm), ins.line);
             }
             frame.ip++;
             break;
@@ -691,10 +667,10 @@ std::optional<Value> Machine::execute() {
                     break;
                 }
             }
-            const auto left = asNumber(lhs);
-            const auto right = asNumber(rhs);
+            const auto left = lhs.AsNumber();
+            const auto right = rhs.AsNumber();
             if (!left || !right) throw RError("comparison expects numbers", ins.line);
-            if (!(left->value <= right->value)) frame.ip = ins.c;
+            if (!(*left <= *right)) frame.ip = ins.c;
             else bump();
             break;
         }
@@ -710,13 +686,13 @@ std::optional<Value> Machine::execute() {
                     else bump();
                     break;
                 }
-                const auto right = asNumber(limit);
+                const auto right = limit.AsNumber();
                 if (!right) throw RError("comparison expects numbers", ins.line);
-                if (static_cast<double>(incremented) <= right->value) frame.ip = ins.c;
+                if (static_cast<double>(incremented) <= *right) frame.ip = ins.c;
                 else bump();
                 break;
             }
-            Value next = binary(Op::Add, counter, Value::integer(1), ins.line);
+            Value next = binary(Op::Add, counter, Value::Integer(1), ins.line);
             counter = std::move(next);
             if (const auto* left = std::get_if<int>(&counter); left) {
                 if (const auto* right = std::get_if<int>(&limit); right) {
@@ -725,10 +701,10 @@ std::optional<Value> Machine::execute() {
                     break;
                 }
             }
-            const auto left = asNumber(counter);
-            const auto right = asNumber(limit);
+            const auto left = counter.AsNumber();
+            const auto right = limit.AsNumber();
             if (!left || !right) throw RError("comparison expects numbers", ins.line);
-            if (left->value <= right->value) frame.ip = ins.c;
+            if (*left <= *right) frame.ip = ins.c;
             else bump();
             break;
         }
@@ -793,11 +769,11 @@ std::optional<Value> Machine::execute() {
             if (!slot || *slot < 0) throw RError("index must be a non-negative int", ins.line);
             if (const auto* text = stringData(object)) {
                 if (static_cast<size_t>(*slot) >= text->size()) throw RError("string index out of range", ins.line);
-                write(ins.a, Value::string(std::string(1, (*text)[static_cast<size_t>(*slot)])));
+                write(ins.a, Value::String(std::string(1, (*text)[static_cast<size_t>(*slot)])));
                 bump();
                 break;
             }
-            if (!std::holds_alternative<TableHandle>(object) || !std::get<TableHandle>(object)) {
+            if (!object.IsTable()) {
                 throw RError("value cannot be indexed", ins.line);
             }
             const TableHandle& table = std::get<TableHandle>(object);
@@ -812,7 +788,7 @@ std::optional<Value> Machine::execute() {
             Value object = fastReg(frame, ins.a);
             const auto* slot = std::get_if<int>(&index);
             if (!slot || *slot < 0) throw RError("index must be a non-negative int", ins.line);
-            if (!std::holds_alternative<TableHandle>(object) || !std::get<TableHandle>(object)) throw RError("value cannot be indexed", ins.line);
+            if (!object.IsTable()) throw RError("value cannot be indexed", ins.line);
             TableHandle container = std::get<TableHandle>(object);
             if (static_cast<size_t>(*slot) >= container->size()) throw RError("table index out of range", ins.line);
             if (createsCycle(value, container)) throw RError("cyclic table ownership is not supported", ins.line);
@@ -825,7 +801,7 @@ std::optional<Value> Machine::execute() {
         case Op::CallMethod: {
             const std::string_view name = state_.constantString(chunk, ins.op == Op::SetProp ? ins.b : ins.c, ins.line);
             Value object = fastReg(frame, ins.op == Op::SetProp ? ins.a : ins.b);
-            if (!std::holds_alternative<Handle>(object) || !std::get<Handle>(object)) throw RError("value has no properties", ins.line);
+            if (!object.IsObject()) throw RError("value has no properties", ins.line);
             HostObject* target = std::get<Handle>(object).get();
             if (ins.op == Op::GetProp) {
                 Value result = target->get(engine_, name);
@@ -859,7 +835,7 @@ std::optional<Value> Machine::execute() {
             const Value& object = fastReg(frame, ins.b);
             const Value& index = fastReg(frame, ins.c);
             const auto* slot = std::get_if<int>(&index);
-            if (!slot || *slot < 0 || !std::holds_alternative<TableHandle>(object) || !std::get<TableHandle>(object)) {
+            if (!slot || *slot < 0 || !object.IsTable()) {
                 throw RError("address expects a table element", ins.line);
             }
             const TableHandle& container = std::get<TableHandle>(object);
@@ -891,8 +867,8 @@ std::optional<Value> Machine::execute() {
         case Op::StoreRef: {
             Value ref = fastReg(frame, ins.a);
             Value incoming = fastReg(frame, ins.b);
-            if (!std::holds_alternative<std::monostate>(incoming)) {
-                if (holdsRef(ref)) {
+            if (!incoming.IsNull()) {
+                if (ref.IsReference()) {
                     const auto* target = std::get_if<IndexedReference>(&ref);
                     if (target && createsCycle(incoming, target->container)) {
                         throw RError("cyclic table ownership is not supported", ins.line);
@@ -922,12 +898,12 @@ std::optional<Value> Machine::execute() {
             Value object = fastReg(frame, ins.b);
             Value index = fastReg(frame, ins.c);
             const auto* slot = std::get_if<int>(&index);
-            if (!slot || *slot < 0 || state_.typeOf(object) != Type::String) {
+            if (!slot || *slot < 0 || !object.IsString()) {
                 throw RError("character index expects a string", ins.line);
             }
-            const std::string& text = state_.stringOf(object);
+            const std::string text = object.AsString();
             if (static_cast<size_t>(*slot) >= text.size()) throw RError("string index out of range", ins.line);
-            write(ins.a, Value::integer(static_cast<unsigned char>(text[static_cast<size_t>(*slot)])));
+            write(ins.a, Value::Integer(static_cast<unsigned char>(text[static_cast<size_t>(*slot)])));
             bump();
             break;
         }
@@ -941,7 +917,7 @@ std::optional<Value> Machine::execute() {
             if (const auto* number = std::get_if<int>(&incoming)) byte = static_cast<char>(*number);
             else if (const auto* text = stringData(incoming)) {
                 if (!text->empty()) byte = (*text)[0];
-            } else if (state_.typeOf(incoming) == Type::String && !state_.stringOf(incoming).empty()) byte = state_.stringOf(incoming)[0];
+            } else if (incoming.IsString() && !incoming.AsString().empty()) byte = incoming.AsString()[0];
             auto* stored = mutableStringData(object);
             if (!stored) {
                 throw RError("character index expects a string", ins.line);
@@ -971,39 +947,39 @@ std::optional<Value> Machine::execute() {
             if (ins.d != 65535) {
                 format = std::string(state_.constantString(chunk, ins.d, ins.line));
             }
-            if (ins.c == 2 && state_.typeOf(value) == Type::String) {
+            if (ins.c == 2 && value.IsString()) {
                 write(ins.a, value);
                 bump();
                 break;
             }
             if (ins.c == 2) {
                 if (const auto* integerValue = std::get_if<int>(&value)) {
-                    write(ins.a, Value::string(castIntToString(*integerValue, format)));
+                    write(ins.a, Value::String(castIntToString(*integerValue, format)));
                 } else if (const auto* realValue = std::get_if<float>(&value)) {
-                    write(ins.a, Value::string(castFloatToString(*realValue, format)));
-                } else if (std::holds_alternative<std::monostate>(value)) {
-                    write(ins.a, Value::string(castIntToString(0, format)));
+                    write(ins.a, Value::String(castFloatToString(*realValue, format)));
+                } else if (value.IsNull()) {
+                    write(ins.a, Value::String(castIntToString(0, format)));
                 } else {
-                    write(ins.a, Value::string(state_.toString(value)));
+                    write(ins.a, Value::String(value.ToString()));
                 }
                 bump();
                 break;
             }
             if (ins.c == 0) {
-                if (const auto* integerValue = std::get_if<int>(&value)) write(ins.a, Value::integer(*integerValue));
-                else if (const auto* realValue = std::get_if<float>(&value)) write(ins.a, Value::integer(narrowInt(*realValue, ins.line)));
-                else if (const auto* flag = std::get_if<bool>(&value)) write(ins.a, Value::integer(*flag ? 1 : 0));
-                else if (state_.typeOf(value) == Type::String) {
-                    write(ins.a, Value::integer(castStringToInt(state_.stringOf(value), format)));
-                } else write(ins.a, Value::integer(0));
+                if (const auto* integerValue = std::get_if<int>(&value)) write(ins.a, Value::Integer(*integerValue));
+                else if (const auto* realValue = std::get_if<float>(&value)) write(ins.a, Value::Integer(narrowInt(*realValue, ins.line)));
+                else if (const auto* flag = std::get_if<bool>(&value)) write(ins.a, Value::Integer(*flag ? 1 : 0));
+                else if (value.IsString()) {
+                    write(ins.a, Value::Integer(castStringToInt(value.AsString(), format)));
+                } else write(ins.a, Value::Integer(0));
                 bump();
                 break;
             }
-            if (const auto* realValue = std::get_if<float>(&value)) write(ins.a, Value::real(*realValue));
-            else if (const auto* integerValue = std::get_if<int>(&value)) write(ins.a, Value::real(static_cast<float>(*integerValue)));
-            else if (state_.typeOf(value) == Type::String) {
-                write(ins.a, Value::real(castStringToFloat(state_.stringOf(value), format)));
-            } else write(ins.a, Value::real(0.f));
+            if (const auto* realValue = std::get_if<float>(&value)) write(ins.a, Value::Real(*realValue));
+            else if (const auto* integerValue = std::get_if<int>(&value)) write(ins.a, Value::Real(static_cast<float>(*integerValue)));
+            else if (value.IsString()) {
+                write(ins.a, Value::Real(castStringToFloat(value.AsString(), format)));
+            } else write(ins.a, Value::Real(0.f));
             bump();
             break;
         }
@@ -1041,7 +1017,7 @@ std::optional<Value> Machine::execute() {
                 write(ins.a, state_.natives[index](engine_, args));
                 break;
             }
-            write(ins.a, Value::integer(0));
+            write(ins.a, Value::Integer(0));
             break;
         }
         default:
