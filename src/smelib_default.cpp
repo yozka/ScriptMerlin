@@ -146,8 +146,8 @@ void sme::library::InstallDefault(Engine& engine)
 	});
 	
 	
-	// Части копятся в pins, иначе сборка внутри makeString съест уже готовую часть.
-	// В конце обрезаем пины до отметки, а не clearAnchors: чужие anchor хоста должны остаться.
+	// Pins используются только для обратной совместимости; значения уже
+	// владеют данными и не зависят от этих временных удержаний.
 	engine.RegisterNative("strexplode", [](Engine& engine, std::span<const Value> args)
 	{
 		if (args.size() != 2) {
@@ -304,5 +304,3 @@ void sme::library::InstallDefault(Engine& engine)
 		return integer(0);
 	});
 }
-
-

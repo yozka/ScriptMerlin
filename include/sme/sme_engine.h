@@ -76,7 +76,8 @@ namespace sme
 		int32_t typeCode(const Value& value) const;
 		void resizeTable(const Value& table, size_t size);
 		Value makeTable(std::vector<Value> items);
-		// Удержать значение между вызовами. clearAnchors снимает все такие удержания.
+		// Дополнительно удержать значение. Значения сами владеют объектами;
+		// anchors нужны только для совместимости и явного контроля времени жизни.
 		void anchor(const Value& value);
 		void clearAnchors();
 		size_t anchorCount() const;
@@ -89,8 +90,7 @@ namespace sme
 		void loadSource(std::string_view source, std::string_view name = "script");
 		
 		// Недостающие аргументы приходят как null, лишние отбрасываются — как при
-		// вызове скрипт→скрипт. Хендл результата жив до следующего call() или resume();
-		// чтобы пережить их, нужен anchor. Уже собранный хендл читается как "invalid".
+		// вызове скрипт→скрипт. Результат владеет данными и может храниться дольше Engine.
 		Value call(std::string_view function, std::span<const Value> args = {});
 		// Верхний кадр стоит сразу за stop. Вложенный call чужую паузу не снимает.
 		bool stopped() const;
@@ -103,7 +103,7 @@ namespace sme
 		
 		Value makeString(std::string text);
 		std::string toString(const Value& value) const;
-		// Имя типа для type() и отладки. NULL — "pointer", мёртвый хендл — "invalid".
+		// Имя типа для type() и отладки. NULL — "pointer", пустой shared_ptr — "invalid".
 		std::string_view typeName(const Value& value) const;
 		Type typeOf(const Value& value) const;
 		std::string stringOf(const Value& value) const;
@@ -119,9 +119,6 @@ namespace sme
 		void compileUnit(const struct SourceUnit& unit, std::string_view name);
 		void rejectActiveCall() const;
 		Value invoke(size_t index, std::span<const Value> args);
-		// Кладёт результат в корень сборки и собирает кучу, пока он ещё удержан.
-		Value retain(Value result);
-		
 		std::unique_ptr<State> state_;
 	};
 
