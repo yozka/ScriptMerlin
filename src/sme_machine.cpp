@@ -77,23 +77,6 @@ Value intBinary(Op op, int x, int y, int line) {
     }
 }
 
-std::vector<Value> takeRegs(State& state, size_t count) {
-    std::vector<Value> regs;
-    if (!state.regPool.empty()) {
-        regs = std::move(state.regPool.back());
-        state.regPool.pop_back();
-    }
-    regs.assign(count, Value{});
-    return regs;
-}
-
-void giveRegs(State& state, std::vector<Value> regs) {
-    std::fill(regs.begin(), regs.end(), Value{});
-    if (state.regPool.size() < 64) {
-        state.regPool.push_back(std::move(regs));
-    }
-}
-
 int narrowInt(double number, int line) {
     if (!std::isfinite(number) ||
         number < static_cast<double>(std::numeric_limits<int>::min()) ||
@@ -373,7 +356,7 @@ Value Machine::run(size_t function, std::span<const Value> args) {
     Frame frame;
     frame.function = function;
     frame.generation = state_.freshFrameId();
-    frame.regs = takeRegs(state_, chunk.registerCount);
+    frame.regs.resize(chunk.registerCount);
     const size_t supplied = std::min(args.size(), static_cast<size_t>(chunk.parameterCount));
     frame.supplied = static_cast<uint16_t>(supplied);
     for (size_t i = 0; i < supplied; ++i) {
@@ -655,7 +638,7 @@ std::optional<Value> Machine::execute() {
                 throw RError("internal argument fault", ins.line);
             }
             Value smallArgs[8];
-            std::vector<Value> heapArgs;
+            std::vector<Value> argumentStorage;
             std::span<const Value> args;
             if (ins.d <= 8) {
                 for (uint16_t i = 0; i < ins.d; ++i) {
@@ -663,11 +646,11 @@ std::optional<Value> Machine::execute() {
                 }
                 args = std::span<const Value>(smallArgs, ins.d);
             } else {
-                heapArgs.reserve(ins.d);
+                argumentStorage.reserve(ins.d);
                 for (uint16_t i = 0; i < ins.d; ++i) {
-                    heapArgs.push_back(frame.regs[ins.c + i]);
+                    argumentStorage.push_back(frame.regs[ins.c + i]);
                 }
-                args = heapArgs;
+                args = argumentStorage;
             }
             bump();
             if (ins.op == Op::CallNative) {
@@ -683,7 +666,7 @@ std::optional<Value> Machine::execute() {
             next.generation = state_.freshFrameId();
             next.writesParent = true;
             next.parentDest = ins.a;
-            next.regs = takeRegs(state_, callee.registerCount);
+            next.regs.resize(callee.registerCount);
             const uint16_t count = std::min(ins.d, callee.parameterCount);
             next.supplied = count;
             for (uint16_t i = 0; i < count && i < next.regs.size(); ++i) {
@@ -696,7 +679,6 @@ std::optional<Value> Machine::execute() {
             Value result = reg(frame, ins.a, ins.line);
             bool writeParent = frame.writesParent;
             uint16_t dest = frame.parentDest;
-            giveRegs(state_, std::move(state_.runStack.back().frames.back().regs));
             state_.runStack.back().frames.pop_back();
             if (state_.runStack.back().frames.empty()) {
                 return result;
@@ -780,15 +762,15 @@ std::optional<Value> Machine::execute() {
                 break;
             }
             Value smallArgs[8];
-            std::vector<Value> heapArgs;
+            std::vector<Value> argumentStorage;
             std::span<const Value> args;
             if (ins.e <= 8) {
                 for (uint16_t i = 0; i < ins.e; ++i) smallArgs[i] = frame.regs[ins.d + i];
                 args = std::span<const Value>(smallArgs, ins.e);
             } else {
-                heapArgs.reserve(ins.e);
-                for (uint16_t i = 0; i < ins.e; ++i) heapArgs.push_back(frame.regs[ins.d + i]);
-                args = heapArgs;
+                argumentStorage.reserve(ins.e);
+                for (uint16_t i = 0; i < ins.e; ++i) argumentStorage.push_back(frame.regs[ins.d + i]);
+                args = argumentStorage;
             }
             bump();
             Value result = target->call(engine_, name, args);
@@ -983,7 +965,7 @@ std::optional<Value> Machine::execute() {
                 next.generation = state_.freshFrameId();
                 next.writesParent = true;
                 next.parentDest = ins.a;
-                next.regs = takeRegs(state_, function->registerCount);
+                next.regs.resize(function->registerCount);
                 const uint16_t count = std::min<uint16_t>(ins.d, function->parameterCount);
                 next.supplied = count;
                 for (uint16_t i = 0; i < count && i < next.regs.size(); ++i) {

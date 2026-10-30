@@ -76,12 +76,6 @@ namespace sme
 		int32_t typeCode(const Value& value) const;
 		void resizeTable(const Value& table, size_t size);
 		Value makeTable(std::vector<Value> items);
-		// Дополнительно удержать значение. Значения сами владеют объектами;
-		// anchors нужны только для совместимости и явного контроля времени жизни.
-		void anchor(const Value& value);
-		void clearAnchors();
-		size_t anchorCount() const;
-		void resizeAnchors(size_t count);
 		
 		// Подменяет таблицу функций. Уже существующие глобалы сохраняют значения;
 		// #def того же имени значение перезаписывает. Пока на стеке есть вызов, load

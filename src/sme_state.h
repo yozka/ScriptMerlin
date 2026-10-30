@@ -183,8 +183,6 @@ struct State {
     files::IFileSystem::Ptr files;
     log::ILogging::Ptr log;
     std::vector<RunState> runStack;
-    std::vector<std::vector<Value>> regPool; // пустые массивы регистров для повторных вызовов
-    std::vector<Value> pins; // совместимое с прежним API явное удержание значений
     size_t frameSerial = 1;
     std::string sourceName = "script";
     size_t scope = 0;

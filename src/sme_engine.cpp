@@ -529,9 +529,6 @@ Value Engine::makeTable(std::vector<Value> items) {
     return Value(std::make_shared<Object>(Table{std::move(items)}));
 }
 
-void Engine::anchor(const Value& value) { state_->pins.push_back(value); }
-void Engine::clearAnchors() { state_->pins.clear(); }
-size_t Engine::anchorCount() const { return state_->pins.size(); }
-void Engine::resizeAnchors(size_t count) { state_->pins.resize(count); }
+
 
 }  // пространство имён sme
