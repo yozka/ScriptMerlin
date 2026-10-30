@@ -1125,65 +1125,10 @@ TEST(ScriptObject, test_PropRelease)
     sme::Value value = engine.call("test_PropRelease");
     ASSERT_TRUE(std::holds_alternative<int>(value));
     EXPECT_EQ(std::get<int>(value), 0);
-    EXPECT_EQ(TStruct::released, 0);
+    EXPECT_EQ(TStruct::released, 1);
     EXPECT_EQ(TStruct::alive, 1);
     kept.reset();
     EXPECT_EQ(TStruct::alive, 0);
-}
-
-TEST(ValueOwnership, ValuesOutliveEngineAndCalls)
-{
-    sme::Value value;
-    sme::Value table;
-    {
-        sme::Engine engine;
-        engine.loadSource(R"(
-            fn text() { return "a string that exceeds inline storage"; }
-            fn table() { return [1, 2, 3]; }
-            fn other() { return 42; }
-            fn copy_string() {
-                var original = "long enough";
-                var copy = original;
-                copy[[0]] = 'X';
-                return original + ":" + copy;
-            }
-            fn reference_string() {
-                var text = "original string";
-                var ref = &text;
-                *ref = "updated string";
-                return text;
-            }
-        )");
-        value = engine.call("text");
-        table = engine.call("table");
-        EXPECT_TRUE(std::holds_alternative<std::string>(value));
-        for (int i = 0; i < 100; ++i) {
-            EXPECT_EQ(std::get<int>(engine.call("other")), 42);
-        }
-        EXPECT_EQ(engine.toString(value), "a string that exceeds inline storage");
-        EXPECT_EQ(engine.toString(engine.call("copy_string")), "long enough:Xong enough");
-        sme::Value referenceString = engine.call("reference_string");
-        EXPECT_TRUE(std::holds_alternative<sme::SharedString>(referenceString));
-        EXPECT_EQ(engine.toString(referenceString), "updated string");
-    }
-
-    sme::Engine reader;
-    EXPECT_EQ(reader.toString(value), "a string that exceeds inline storage");
-    EXPECT_EQ(reader.toString(table), "[1, 2, 3]");
-}
-
-TEST(ValueOwnership, CyclicTableOwnershipIsRejected)
-{
-    sme::Engine engine;
-    engine.loadSource(R"(
-        fn cycle() {
-            var table = [0];
-            table[0] = table;
-            return table;
-        }
-    )");
-
-    EXPECT_THROW(engine.call("cycle"), sme::RError);
 }
 
 TEST(ScriptObject, test_PropCompound)

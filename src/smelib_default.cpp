@@ -146,6 +146,8 @@ void sme::library::InstallDefault(Engine& engine)
 	});
 	
 	
+	// Части копятся в pins, иначе сборка внутри makeString съест уже готовую часть.
+	// В конце обрезаем пины до отметки, а не clearAnchors: чужие anchor хоста должны остаться.
 	engine.RegisterNative("strexplode", [](Engine& engine, std::span<const Value> args)
 	{
 		if (args.size() != 2) {
@@ -155,18 +157,25 @@ void sme::library::InstallDefault(Engine& engine)
 
 		const std::string text = engine.stringOf(args[0]);
 		const char delimiter = static_cast<char>(engine.integerOf(args[1]));
+		const size_t mark = engine.anchorCount();
 		std::vector<Value> parts;
 		std::string piece;
 		for (char character : text) {
 			if (character == delimiter) {
-				parts.push_back(engine.makeString(piece));
+				Value part = engine.makeString(piece);
+				engine.anchor(part);
+				parts.push_back(std::move(part));
 				piece.clear();
 			} else {
 				piece.push_back(character);
 			}
 		}
-		parts.push_back(engine.makeString(piece));
-		return engine.makeTable(std::move(parts));
+		Value tail = engine.makeString(piece);
+		engine.anchor(tail);
+		parts.push_back(std::move(tail));
+		Value table = engine.makeTable(std::move(parts));
+		engine.resizeAnchors(mark);
+		return table;
 	});
 	
 	
@@ -295,3 +304,5 @@ void sme::library::InstallDefault(Engine& engine)
 		return integer(0);
 	});
 }
+
+

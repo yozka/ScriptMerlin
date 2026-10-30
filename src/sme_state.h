@@ -5,17 +5,18 @@
 #include "sme/sme_value.h"
 
 #include <cstdint>
+#include <deque>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <type_traits>
 #include <unordered_map>
-#include <utility>
 #include <variant>
 #include <vector>
 
 namespace sme {
 
-// Внутреннее состояние движка: байткод и кадры.
+// Внутреннее состояние движка: байткод, куча, кадры и корни сборки мусора.
 // Публичный API — Engine. Сюда смотрят компилятор и интерпретатор.
 
 // Таблица скрипта: плоский вектор, индекс — целое с нуля.
@@ -23,7 +24,8 @@ struct Table {
     std::vector<Value> items;
 };
 
-// Объект хоста с RAII-владением.
+// Объект хоста, лежащий в куче. shared_ptr держит C++-объект,
+// пока слот кучи жив. release() зовётся отдельно, когда слот собирают.
 struct HostBox {
     std::shared_ptr<HostObject> object;
 };
@@ -41,32 +43,27 @@ struct Reference {
     size_t index = 0;
 };
 
-// Объекты со значимым сроком жизни хранятся через shared_ptr в Value.
-using StoredObject = std::variant<Table, HostBox, Reference>;
+// Всё, что лежит в куче и адресуется хендлом.
+using Object = std::variant<std::string, Table, HostBox, Reference>;
 
-struct Object {
-    template <class T>
-    explicit Object(T&& value) : data(std::forward<T>(value)) {}
-
-    StoredObject data;
-};
-
-#define OT_TAB 0
-#define OT_OBJ 1
-#define OT_REF 2
+#define OT_STR 0
+#define OT_TAB 1
+#define OT_OBJ 2
+#define OT_REF 3
 
 #define OT_CHECK(index, type) \
-    static_assert(std::is_same_v<std::variant_alternative_t<(index), StoredObject>, type>, \
+    static_assert(std::is_same_v<std::variant_alternative_t<(index), Object>, type>, \
         #index " is not " #type " in Object")
 
+OT_CHECK(OT_STR, std::string);
 OT_CHECK(OT_TAB, Table);
 OT_CHECK(OT_OBJ, HostBox);
 OT_CHECK(OT_REF, Reference);
-static_assert(std::variant_size_v<StoredObject> == 3, "Object gained or lost an alternative");
+static_assert(std::variant_size_v<Object> == 4, "Object gained or lost an alternative");
 using Factory = std::function<std::shared_ptr<HostObject>()>;
 
-// Константа байткода. Строка здесь ещё текст: LoadConst копирует её в Value
-// при первом выполнении и затем использует interned-значение.
+// Константа байткода. Строка здесь ещё текст: в значение-хендл её
+// превращает LoadConst в момент выполнения.
 using Constant = std::variant<std::monostate, int, float, bool, std::string, Pointer>;
 
 // Байткод регистровой машины. r[n] — регистр текущего кадра.
@@ -146,7 +143,7 @@ struct Chunk {
     uint16_t registerCount = 0;
     std::vector<Instruction> code;
     std::vector<Constant> constants;
-    // Строковые константы разделяют владельца и живут, пока жив chunk или Value.
+    // Строковые константы создаются один раз и живут, пока жив chunk.
     mutable std::vector<Value> interned;
     size_t scope = 0; // копия #scope файла, одна на все функции загрузки
 };
@@ -174,7 +171,39 @@ struct RunState {
     std::vector<Frame> frames;
 };
 
+// Куча с поколениями слотов. deque не сдвигает уже выданные слоты при росте,
+// поэтому ссылка из at() живёт до сборки этого слота.
+class Heap {
+public:
+    using RootFn = std::function<void(std::vector<Value>&)>;
+
+    void setRoots(RootFn roots);
+
+    Handle allocate(Object object);
+    bool check(Handle handle) const;
+    Object& at(Handle handle);
+    const Object& at(Handle handle) const;
+
+    void collect();
+
+private:
+    struct Slot {
+        size_t generation = 1;
+        bool live = false;
+        Object data;
+    };
+
+    void markValue(const Value& value, std::vector<uint8_t>& mark) const;
+
+    std::deque<Slot> slots_;
+    std::vector<size_t> free_;
+    RootFn roots_;
+    // Короткоживущие строки в цикле не должны собирать кучу каждые 32 объекта.
+    static constexpr uint32_t kCollectAt = 65536;
+};
+
 struct State {
+    Heap heap;
     std::vector<Global> globals;
     std::vector<Chunk> functions;
     std::vector<std::string> nativeNames;
@@ -183,11 +212,17 @@ struct State {
     files::IFileSystem::Ptr files;
     log::ILogging::Ptr log;
     std::vector<RunState> runStack;
+    std::vector<std::vector<Value>> regPool; // пустые массивы регистров для повторных вызовов
+    std::vector<Value> pins; // явные anchor и временные пины нативов
+    // Последнее значение, отданное хосту. Корень сборки до следующего call/resume,
+    // иначе строка из return умирает на ближайшей сборке и читается как "invalid".
+    Value result;
     size_t frameSerial = 1;
     std::string sourceName = "script";
     size_t scope = 0;
 
     size_t freshFrameId();
+    void gatherRoots(std::vector<Value>& out) const;
     void fail(const std::string& message, int line = 0);
 
     Value makeString(std::string text);
