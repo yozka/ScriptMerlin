@@ -11,38 +11,6 @@
 #include <string>
 
 
-/*
-namespace sme {
-namespace {
-
-std::optional<double> asDouble(const Value& value) {
-    if (const auto* integer = std::get_if<int>(&value)) {
-        return static_cast<double>(*integer);
-    }
-    if (const auto* real = std::get_if<float>(&value)) {
-        return static_cast<double>(*real);
-    }
-    return std::nullopt;
-}
-
-void expectArgs(std::span<const Value> args, size_t count, const char* name) {
-    if (args.size() != count) {
-        throw RError(std::string(name) + " expects " + std::to_string(count) + " argument(s)");
-    }
-}
-
-double expectNumber(const Value& value, const char* name) {
-    auto number = asDouble(value);
-    if (!number) {
-        throw RError(std::string(name) + " expects a number");
-    }
-    return *number;
-}
-
-Value realResult(double value) { return real(static_cast<float>(value)); }
-
-}  // анонимное пространство имён
-*/
 
 void sme::library::InstallMath(Engine& engine)
 {

@@ -49,7 +49,7 @@ size_t State::freshFrameId() {
 
 void State::fail(const std::string& message, int line) {
     if (log) {
-        log->message(log::Level::RError, message);
+        log->message(log::Level::Error, message);
     }
     throw RError(message, line);
 }
@@ -240,7 +240,7 @@ void Engine::Log(const log::Level level, const std::string& text)
 void Engine::Error(const error::Code code, const std::string& text)
 {
 	if (state_->log) {
-		state_->log->message(log::Level::RError, std::to_string(static_cast<int>(code)) + " " + text);
+		state_->log->message(log::Level::Error, std::to_string(static_cast<int>(code)) + " " + text);
 	}
 }
 
@@ -371,7 +371,7 @@ Value Engine::invoke(size_t index, std::span<const Value> args) {
         return retain(Machine(*this, *state_).run(index, args));
     } catch (const RError& error) {
         if (state_->log) {
-            state_->log->message(log::Level::RError, error.what());
+            state_->log->message(log::Level::Error, error.what());
         }
         throw;
     }
@@ -410,7 +410,7 @@ Value Engine::resume() {
         return retain(Machine(*this, *state_).resume());
     } catch (const RError& error) {
         if (state_->log) {
-            state_->log->message(log::Level::RError, error.what());
+            state_->log->message(log::Level::Error, error.what());
         }
         throw;
     }

@@ -30,7 +30,7 @@ public:
     sme::Value call(sme::Engine& engine, std::string_view name, std::span<const sme::Value> args) override {
         if (name == "add") {
             if (args.size() != 1) {
-                throw sme::RError("add expects 1 argument");
+				return {};
             }
             value_ += std::get<int>(args[0]);
             return sme::integer(value_);
@@ -46,9 +46,9 @@ int main() {
     // Нативы и объекты привязываются до загрузки. loadSource сам прогоняет
     // препроцессор, лексер, парсер и компилятор.
     sme::Engine engine;
-    sme::addDefaultLibrary(engine);
-    sme::addGsLibrary(engine);
-    sme::addMathLibrary(engine);
+	sme::library::InstallDefault(engine);
+	sme::library::InstallMath(engine);
+	sme::library::InstallGS(engine);
     engine.bind("counter", std::make_shared<Counter>());
     engine.loadSource(R"mln(
 fn main() {

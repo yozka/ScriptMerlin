@@ -12,40 +12,7 @@
 #include <string_view>
 #include <vector>
 
-/*
-namespace {
 
-void expectArgs(std::span<const Value> args, size_t count, const char* name) {
-	if (args.size() != count) {
-		throw RError(std::string(name) + " expects " + std::to_string(count) + " argument(s)");
-	}
-}
-
-int asInt(const Value& value, const char* name) {
-	if (const auto* integerValue = std::get_if<int>(&value)) return *integerValue;
-	if (const auto* flag = std::get_if<bool>(&value)) return *flag ? 1 : 0;
-	if (const auto* realValue = std::get_if<float>(&value)) {
-		const double number = *realValue;
-		if (!std::isfinite(number) ||
-			number < static_cast<double>(std::numeric_limits<int>::min()) ||
-			number >= static_cast<double>(std::numeric_limits<int>::max()) + 1.0) {
-			throw RError(std::string(name) + " integer overflow");
-		}
-		return static_cast<int>(number);
-	}
-	throw RError(std::string(name) + " expects an int");
-}
-
-std::string textOf(Engine& engine, const Value& value, const char* name) {
-	if (engine.typeOf(value) != Type::String) {
-		throw RError(std::string(name) + " expects a string");
-	}
-	return engine.stringOf(value);
-}
-
-}  // анонимное пространство имён
-*/
- 
 void sme::library::InstallDefault(Engine& engine)
 {
 	

@@ -11,7 +11,7 @@ enum class Level {
     Output,
     Info,
     Warning,
-    RError,
+    Error,
     Halt
 };
 
