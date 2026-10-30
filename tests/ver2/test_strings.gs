@@ -24,6 +24,15 @@ func test_StringSubstring()
     return strsub(text_str, 6, 5); // Extract "World"
 }
 
+func test_StringSubstringEdgeCases()
+{
+    text_str = "Hello World";
+    left = strsub(text_str, -5, 5);   // clamp to start of string
+    empty = strsub(text_str, 20, 5);  // past the end => empty
+    tail = strsub(text_str, 6, -1);   // rest of string from position 6
+    return left + "|" + empty + "|" + tail;
+}
+
 func test_StringFind()
 {
     text_str = "Hello World";

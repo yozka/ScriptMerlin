@@ -441,6 +441,34 @@ std::string Engine::stringOf(const Value& value) const { return state_->stringOf
 size_t Engine::lengthOf(const Value& value) const { return state_->lengthOf(value); }
 
 
+int Engine::integerOf(const Value& value) const
+{
+	if (const auto* integerValue = std::get_if<int>(&value)) {
+		return *integerValue;
+	}
+	if (const auto* floatValue = std::get_if<float>(&value)) {
+		return static_cast<int>(*floatValue);
+	}
+	throw RError("not integer");
+	return 0;
+}
+
+
+float Engine::floatOf(const Value& value) const
+{
+	if (const auto* floatValue = std::get_if<float>(&value)) {
+		return *floatValue;
+	}
+	if (const auto* integerValue = std::get_if<int>(&value)) {
+		return static_cast<float>(*integerValue);
+	}
+	
+	throw RError("not float");
+	return 0;
+}
+
+
+
 void Engine::addFactory(std::string name, std::function<std::shared_ptr<HostObject>()> factory) {
     if (!factory) {
         throw RError("factory '" + name + "' is empty");

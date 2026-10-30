@@ -28,13 +28,15 @@ std::string scriptPath(const char* relative) {
     return std::string(MLN_TESTS_DIR) + "/" + relative;
 }
 
-sme::Engine& cachedEngine(const char* relative) {
+sme::Engine& cachedEngine(const char* relative)
+{
     static std::unordered_map<std::string, std::unique_ptr<sme::Engine>> cache;
     auto& slot = cache[relative];
     if (!slot) {
         auto engine = std::make_unique<sme::Engine>();
-        sme::addDefaultLibrary(*engine);
-        sme::addGsLibrary(*engine);
+        sme::library::InstallDefault(*engine);
+		sme::library::InstallMath(*engine);
+		sme::library::InstallGS(*engine);
         engine->load(scriptPath(relative));
         slot = std::move(engine);
     }
@@ -864,6 +866,12 @@ TEST(StringOperations, StringSubstring)
     EXPECT_EQ(script.text(), "World");
 }
 
+TEST(StringOperations, StringSubstringEdgeCases)
+{
+    Result script = run("ver2/test_strings.gs", "test_StringSubstringEdgeCases");
+    EXPECT_EQ(script.text(), "Hello||World");
+}
+
 TEST(StringOperations, StringFind)
 {
     Result script = run("ver2/test_strings.gs", "test_StringFind");
@@ -1061,8 +1069,9 @@ TEST(ScriptObject, test_Prop)
     TStruct::alive = 0;
     TStruct::released = 0;
     sme::Engine engine;
-    sme::addDefaultLibrary(engine);
-    sme::addGsLibrary(engine);
+	sme::library::InstallDefault(engine);
+	sme::library::InstallMath(engine);
+	sme::library::InstallGS(engine);
     engine.addFactory("TStruct", [] { return std::make_shared<TStruct>(); });
     engine.load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = engine.call("test_Prop");
@@ -1074,8 +1083,9 @@ TEST(ScriptObject, test_PropCall)
 {
     TStruct::alive = 0;
     sme::Engine engine;
-    sme::addDefaultLibrary(engine);
-    sme::addGsLibrary(engine);
+	sme::library::InstallDefault(engine);
+	sme::library::InstallMath(engine);
+	sme::library::InstallGS(engine);
     engine.addFactory("TStruct", [] { return std::make_shared<TStruct>(); });
     engine.load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = engine.call("test_PropCall");
@@ -1087,8 +1097,9 @@ TEST(ScriptObject, test_PropAdd)
 {
     TStruct::alive = 0;
     sme::Engine engine;
-    sme::addDefaultLibrary(engine);
-    sme::addGsLibrary(engine);
+	sme::library::InstallDefault(engine);
+	sme::library::InstallMath(engine);
+	sme::library::InstallGS(engine);
     engine.addFactory("TStruct", [] { return std::make_shared<TStruct>(); });
     engine.load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = engine.call("test_PropAdd");
@@ -1103,8 +1114,9 @@ TEST(ScriptObject, test_PropRelease)
     TStruct::released = 0;
     std::shared_ptr<TStruct> kept;
     sme::Engine engine;
-    sme::addDefaultLibrary(engine);
-    sme::addGsLibrary(engine);
+	sme::library::InstallDefault(engine);
+	sme::library::InstallMath(engine);
+	sme::library::InstallGS(engine);
     engine.addFactory("TStruct", [&kept] {
         kept = std::make_shared<TStruct>();
         return kept;
@@ -1123,8 +1135,9 @@ TEST(ScriptObject, test_PropCompound)
 {
     TStruct::alive = 0;
     sme::Engine engine;
-    sme::addDefaultLibrary(engine);
-    sme::addGsLibrary(engine);
+	sme::library::InstallDefault(engine);
+	sme::library::InstallMath(engine);
+	sme::library::InstallGS(engine);
     engine.addFactory("TStruct", [] { return std::make_shared<TStruct>(); });
     engine.load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = engine.call("test_PropCompound");
@@ -1426,8 +1439,9 @@ TEST(Language, Include)
 TEST(Language, Scope)
 {
     sme::Engine engine;
-    sme::addDefaultLibrary(engine);
-    sme::addGsLibrary(engine);
+	sme::library::InstallDefault(engine);
+	sme::library::InstallMath(engine);
+	sme::library::InstallGS(engine);
     engine.load(scriptPath("ver2/test_language.gs"));
     EXPECT_EQ(engine.scope(), 41);
     EXPECT_EQ(engine.functionScope("test_LangInclude"), std::optional<size_t>{41});
@@ -1437,8 +1451,9 @@ TEST(Language, Scope)
 TEST(Language, Abort)
 {
     sme::Engine engine;
-    sme::addDefaultLibrary(engine);
-    sme::addGsLibrary(engine);
+	sme::library::InstallDefault(engine);
+	sme::library::InstallMath(engine);
+	sme::library::InstallGS(engine);
     engine.load(scriptPath("ver2/test_language_abort.gs"));
     EXPECT_EQ(engine.findFunction("abort_should_not_compile"), std::nullopt);
     EXPECT_EQ(globalInt(engine, "ABORT_SEEN"), 1);
@@ -1447,8 +1462,9 @@ TEST(Language, Abort)
 TEST(Language, Stop)
 {
     sme::Engine engine;
-    sme::addDefaultLibrary(engine);
-    sme::addGsLibrary(engine);
+	sme::library::InstallDefault(engine);
+	sme::library::InstallMath(engine);
+	sme::library::InstallGS(engine);
     engine.load(scriptPath("ver2/test_language.gs"));
     engine.call("test_Stop");
     EXPECT_TRUE(engine.stopped());
@@ -1491,9 +1507,9 @@ TEST(Performance, FunctionCalls)
 TEST(Performance, WorkloadSpeed)
 {
     sme::Engine engine;
-    sme::addDefaultLibrary(engine);
-    sme::addGsLibrary(engine);
-    sme::addMathLibrary(engine);
+	sme::library::InstallDefault(engine);
+	sme::library::InstallMath(engine);
+	sme::library::InstallGS(engine);
     engine.addFactory("TStruct", [] { return std::make_shared<TStruct>(); });
     engine.load(scriptPath("ver2/test_performance.gs"));
 

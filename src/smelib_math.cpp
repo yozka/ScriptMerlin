@@ -10,6 +10,8 @@
 #include <span>
 #include <string>
 
+
+/*
 namespace sme {
 namespace {
 
@@ -40,64 +42,127 @@ double expectNumber(const Value& value, const char* name) {
 Value realResult(double value) { return real(static_cast<float>(value)); }
 
 }  // анонимное пространство имён
+*/
 
-void addMathLibrary(Engine& engine) {
-    engine.addNative("abs", [](Engine&, std::span<const Value> args) {
-        expectArgs(args, 1, "abs");
-        if (const auto* integerValue = std::get_if<int>(&args[0])) {
-            if (*integerValue == std::numeric_limits<int>::min()) throw RError("integer overflow");
-            return integer(std::abs(*integerValue));
-        }
-        return realResult(std::fabs(expectNumber(args[0], "abs")));
-    });
-    engine.addNative("floor", [](Engine&, std::span<const Value> args) {
-        expectArgs(args, 1, "floor");
-        return realResult(std::floor(expectNumber(args[0], "floor")));
-    });
-    engine.addNative("ceil", [](Engine&, std::span<const Value> args) {
-        expectArgs(args, 1, "ceil");
-        return realResult(std::ceil(expectNumber(args[0], "ceil")));
-    });
-    engine.addNative("round", [](Engine&, std::span<const Value> args) {
-        expectArgs(args, 1, "round");
-        return realResult(std::round(expectNumber(args[0], "round")));
-    });
-    engine.addNative("sqrt", [](Engine&, std::span<const Value> args) {
-        expectArgs(args, 1, "sqrt");
-        double value = expectNumber(args[0], "sqrt");
-        if (value < 0) throw RError("sqrt expects a non-negative number");
-        return realResult(std::sqrt(value));
-    });
-    engine.addNative("sin", [](Engine&, std::span<const Value> args) {
-        expectArgs(args, 1, "sin");
-        return realResult(std::sin(expectNumber(args[0], "sin")));
-    });
-    engine.addNative("cos", [](Engine&, std::span<const Value> args) {
-        expectArgs(args, 1, "cos");
-        return realResult(std::cos(expectNumber(args[0], "cos")));
-    });
-    engine.addNative("pow", [](Engine&, std::span<const Value> args) {
-        expectArgs(args, 2, "pow");
-        return realResult(std::pow(expectNumber(args[0], "pow"), expectNumber(args[1], "pow")));
-    });
-    engine.addNative("min", [](Engine&, std::span<const Value> args) {
-        expectArgs(args, 2, "min");
-        double lhs = expectNumber(args[0], "min");
-        double rhs = expectNumber(args[1], "min");
-        if (!std::holds_alternative<float>(args[0]) && !std::holds_alternative<float>(args[1])) {
-            return integer(static_cast<int>(std::min(lhs, rhs)));
-        }
-        return realResult(std::min(lhs, rhs));
-    });
-    engine.addNative("max", [](Engine&, std::span<const Value> args) {
-        expectArgs(args, 2, "max");
-        double lhs = expectNumber(args[0], "max");
-        double rhs = expectNumber(args[1], "max");
-        if (!std::holds_alternative<float>(args[0]) && !std::holds_alternative<float>(args[1])) {
-            return integer(static_cast<int>(std::max(lhs, rhs)));
-        }
-        return realResult(std::max(lhs, rhs));
-    });
+void sme::library::InstallMath(Engine& engine)
+{
+	engine.RegisterNative("abs", [](Engine& engine, std::span<const Value> args)
+	{
+		if (args.size() != 1) {
+			engine.Error(error::Code::FUNCTION_ARGUMENTS, "abs expects 1 argument");
+			return null();
+		}
+		if (const auto* integerValue = std::get_if<int>(&args[0])) {
+			if (*integerValue == std::numeric_limits<int>::min()) {
+				engine.Error(error::Code::FUNCTION_ARGUMENTS, "abs overflow");
+				return null();
+			}
+			return integer(std::abs(*integerValue));
+		}
+		return real(engine.floatOf(args[0]));
+	});
+	
+	
+	engine.RegisterNative("floor", [](Engine& engine, std::span<const Value> args)
+	{
+		if (args.size() != 1) {
+			engine.Error(error::Code::FUNCTION_ARGUMENTS, "floor expects 1 argument");
+			return null();
+		}
+		return real(std::floor(engine.floatOf(args[0])));
+	});
+	
+	
+	engine.RegisterNative("ceil", [](Engine& engine, std::span<const Value> args)
+	{
+		if (args.size() != 1) {
+			engine.Error(error::Code::FUNCTION_ARGUMENTS, "ceil expects 1 argument");
+			return null();
+		}
+		return real(std::ceil(engine.floatOf(args[0])));
+	});
+	
+	
+	engine.RegisterNative("round", [](Engine& engine, std::span<const Value> args)
+	{
+		if (args.size() != 1) {
+			engine.Error(error::Code::FUNCTION_ARGUMENTS, "round expects 1 argument");
+			return null();
+		}
+		return real(std::round(engine.floatOf(args[0])));
+	});
+	
+	
+	engine.RegisterNative("sqrt", [](Engine& engine, std::span<const Value> args)
+	{
+		if (args.size() != 1) {
+			engine.Error(error::Code::FUNCTION_ARGUMENTS, "sqrt expects 1 argument");
+			return null();
+		}
+		const float value = engine.floatOf(args[0]);
+		if (value < 0) {
+			engine.Error(error::Code::FUNCTION_ARGUMENTS, "sqrt expects a non-negative number");
+			return null();
+		}
+		return real(std::sqrt(value));
+	});
+	
+	
+	engine.RegisterNative("sin", [](Engine& engine, std::span<const Value> args)
+	{
+		if (args.size() != 1) {
+			engine.Error(error::Code::FUNCTION_ARGUMENTS, "sin expects 1 argument");
+			return null();
+		}
+		return real(std::sin(engine.floatOf(args[0])));
+	});
+	
+	
+	engine.RegisterNative("cos", [](Engine& engine, std::span<const Value> args)
+	{
+		if (args.size() != 1) {
+			engine.Error(error::Code::FUNCTION_ARGUMENTS, "cos expects 1 argument");
+			return null();
+		}
+		return real(std::cos(engine.floatOf(args[0])));
+	});
+	
+	
+	engine.RegisterNative("pow", [](Engine& engine, std::span<const Value> args)
+	{
+		if (args.size() != 2) {
+			engine.Error(error::Code::FUNCTION_ARGUMENTS, "pow expects 2 argument");
+			return null();
+		}
+		return real(std::pow(engine.floatOf(args[0]), engine.floatOf(args[1])));
+	});
+	
+	
+	engine.RegisterNative("min", [](Engine& engine, std::span<const Value> args)
+	{
+		if (args.size() != 2) {
+			engine.Error(error::Code::FUNCTION_ARGUMENTS, "min expects 2 argument");
+			return null();
+		}
+		if (std::holds_alternative<int>(args[0]) && std::holds_alternative<int>(args[1])) {
+			return integer(static_cast<int>(std::min(engine.integerOf(args[0]), engine.integerOf(args[1]))));
+		}
+		return real(std::min(engine.floatOf(args[0]), engine.floatOf(args[1])));
+	});
+	
+	
+	engine.RegisterNative("max", [](Engine& engine, std::span<const Value> args)
+	{
+		if (args.size() != 2) {
+			engine.Error(error::Code::FUNCTION_ARGUMENTS, "max expects 2 argument");
+			return null();
+		}
+		if (std::holds_alternative<int>(args[0]) && std::holds_alternative<int>(args[1])) {
+			return integer(static_cast<int>(std::max(engine.integerOf(args[0]), engine.integerOf(args[1]))));
+		}
+		return real(std::max(engine.floatOf(args[0]), engine.floatOf(args[1])));
+	});
+	
 }
 
-}  // пространство имён sme
+

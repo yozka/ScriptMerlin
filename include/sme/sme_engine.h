@@ -108,6 +108,8 @@ namespace sme
 		Type typeOf(const Value& value) const;
 		std::string stringOf(const Value& value) const;
 		size_t lengthOf(const Value& value) const;
+		int integerOf(const Value& value) const;
+		float floatOf(const Value& value) const;
 		
 	public:
 		void Log(const log::Level level, const std::string& text);
