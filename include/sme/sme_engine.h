@@ -95,7 +95,6 @@ namespace sme
 		// nullopt — функции с таким именем нет.
 		std::optional<size_t> functionScope(std::string_view name) const;
 		
-		Value makeString(std::string text);
 		std::string toString(const Value& value) const;
 		// Имя типа для type() и отладки. NULL — "pointer", пустой shared_ptr — "invalid".
 		std::string_view typeName(const Value& value) const;

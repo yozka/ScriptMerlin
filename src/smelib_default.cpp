@@ -20,9 +20,9 @@ void sme::library::InstallDefault(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "len expects 1 argument");
-			return null();
+			return Value::null();
 		}
-		return integer(static_cast<int>(engine.lengthOf(args[0])));
+		return Value::integer(static_cast<int>(engine.lengthOf(args[0])));
 	});
 	
 	
@@ -30,16 +30,16 @@ void sme::library::InstallDefault(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "str expects 1 argument");
-			return null();
+			return Value::null();
 		}
 		if (const auto* count = std::get_if<int>(&args[0])) {
 			if (*count < 0) {
 				engine.Error(error::Code::FUNCTION_ARGUMENTS, "str size is negative");
-				return null();
+				return Value::null();
 			}
-			return engine.makeString(std::string(static_cast<size_t>(*count), '\0'));
+			return Value::string(std::string(static_cast<size_t>(*count), '\0'));
 		}
-		return engine.makeString(engine.toString(args[0]));
+		return Value::string(engine.toString(args[0]));
 	});
 	
 	
@@ -47,13 +47,13 @@ void sme::library::InstallDefault(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "tab expects 1 argument");
-			return null();
+			return Value::null();
 		}
 		if (!std::holds_alternative<int>(args[0]) || std::get<int>(args[0]) < 0) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "tab size expects a non-negative int");
-			return null();
+			return Value::null();
 		}
-		return engine.makeTable(std::vector<Value>(static_cast<size_t>(std::get<int>(args[0])), null()));
+		return engine.makeTable(std::vector<Value>(static_cast<size_t>(std::get<int>(args[0])), Value::null()));
 	});
 	
 	
@@ -61,9 +61,9 @@ void sme::library::InstallDefault(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "type expects 1 argument");
-			return null();
+			return Value::null();
 		}
-		return engine.makeString(std::string(engine.typeName(args[0])));
+		return Value::string(std::string(engine.typeName(args[0])));
 	});
 	
 	
@@ -75,7 +75,7 @@ void sme::library::InstallDefault(Engine& engine)
 			line += engine.toString(args[i]);
 		}
 		engine.Log(log::Level::Output, line);
-		return null();
+		return Value::null();
 	});
 	
 	
@@ -87,7 +87,7 @@ void sme::library::InstallDefault(Engine& engine)
 			line += engine.toString(args[i]);
 		}
 		engine.Log(log::Level::Output, line);
-		return null();
+		return Value::null();
 	});
 	
 	
@@ -95,17 +95,17 @@ void sme::library::InstallDefault(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "strlen expects 1 argument");
-			return null();
+			return Value::null();
 		}
 		const auto& value =  args[0];
 		
 		if (engine.typeOf(value) != Type::String) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "strlen expects a string");
-			return null();
+			return Value::null();
 		}
 		const std::string text = engine.stringOf(value);
 		const auto end = text.find('\0');
-		return integer(static_cast<int>(end == std::string::npos ? text.size() : end));
+		return Value::integer(static_cast<int>(end == std::string::npos ? text.size() : end));
 	});
 	
 	
@@ -113,7 +113,7 @@ void sme::library::InstallDefault(Engine& engine)
 	{
 		if (args.size() != 3) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "strsub expects 3 arguments");
-			return null();
+			return Value::null();
 		}
 		
 		const std::string text = engine.stringOf(args[0]);
@@ -121,13 +121,13 @@ void sme::library::InstallDefault(Engine& engine)
 		const int length = engine.integerOf(args[2]);
 
 		size_t begin = static_cast<size_t>(start < 0 ? 0 : start);
-		if (begin >= text.size()) return engine.makeString("");
+		if (begin >= text.size()) return Value::string({});
 
-		if (length < 0) return engine.makeString(text.substr(begin));
+		if (length < 0) return Value::string(text.substr(begin));
 
 		size_t count = static_cast<size_t>(length);
 		if (count > text.size() - begin) count = text.size() - begin;
-		return engine.makeString(text.substr(begin, count));
+		return Value::string(text.substr(begin, count));
 	});
 	
 	
@@ -135,14 +135,14 @@ void sme::library::InstallDefault(Engine& engine)
 	{
 		if (args.size() != 2) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "strpos expects 2 arguments");
-			return null();
+			return Value::null();
 		}
 		
 		const std::string text = engine.stringOf(args[0]);
 		const std::string needle = engine.stringOf(args[1]);
 		const size_t found = text.find(needle);
-		if (found == std::string::npos) return integer(-1);
-		return integer(static_cast<int>(found));
+		if (found == std::string::npos) return Value::integer(-1);
+		return Value::integer(static_cast<int>(found));
 	});
 	
 	
@@ -150,7 +150,7 @@ void sme::library::InstallDefault(Engine& engine)
 	{
 		if (args.size() != 2) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "strexplode expects 2 arguments");
-			return null();
+			return Value::null();
 		}
 
 		const std::string text = engine.stringOf(args[0]);
@@ -159,13 +159,13 @@ void sme::library::InstallDefault(Engine& engine)
 		std::string piece;
 		for (char character : text) {
 			if (character == delimiter) {
-				parts.push_back(engine.makeString(piece));
+				parts.emplace_back(piece);
 				piece.clear();
 			} else {
 				piece.push_back(character);
 			}
 		}
-		parts.push_back(engine.makeString(piece));
+		parts.emplace_back(piece);
 		return engine.makeTable(std::move(parts));
 	});
 	
@@ -174,14 +174,14 @@ void sme::library::InstallDefault(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "strupr expects 1 arguments");
-			return null();
+			return Value::null();
 		}
 		
 		std::string text = engine.stringOf(args[0]);
 		for (char& character : text) {
 			character = static_cast<char>(std::toupper(static_cast<unsigned char>(character)));
 		}
-		return engine.makeString(std::move(text));
+		return Value::string(std::move(text));
 	});
 	
 	
@@ -189,14 +189,14 @@ void sme::library::InstallDefault(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "strlwr expects 1 arguments");
-			return null();
+			return Value::null();
 		}
 		
 		std::string text = engine.stringOf(args[0]);
 		for (char& character : text) {
 			character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
 		}
-		return engine.makeString(std::move(text));
+		return Value::string(std::move(text));
 	});
 	
 	
@@ -204,7 +204,7 @@ void sme::library::InstallDefault(Engine& engine)
 	{
 		if (args.size() != 2) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "strtrim expects 2 arguments");
-			return null();
+			return Value::null();
 		}
 		
 		const std::string text = engine.stringOf(args[0]);
@@ -213,7 +213,7 @@ void sme::library::InstallDefault(Engine& engine)
 		size_t end = text.size();
 		while (begin < end && cut.find(text[begin]) != std::string::npos) ++begin;
 		while (end > begin && cut.find(text[end - 1]) != std::string::npos) --end;
-		return engine.makeString(text.substr(begin, end - begin));
+		return Value::string(text.substr(begin, end - begin));
 	});
 	
 	
@@ -221,17 +221,17 @@ void sme::library::InstallDefault(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "sizeof expects 1 arguments");
-			return null();
+			return Value::null();
 		}
-		if (engine.isReference(args[0])) return integer(0);
+		if (engine.isReference(args[0])) return Value::integer(0);
 		const Type kind = engine.typeOf(args[0]);
 		if (kind == Type::String) {
 			const std::string text = engine.stringOf(args[0]);
 			const int32_t size = static_cast<int>(text.size());
-			return integer(text.find('\0') == std::string::npos ? size + 1 : size);
+			return Value::integer(text.find('\0') == std::string::npos ? size + 1 : size);
 		}
-		if (kind == Type::Table) return integer(static_cast<int>(engine.lengthOf(args[0])));
-		return integer(0);
+		if (kind == Type::Table) return Value::integer(static_cast<int>(engine.lengthOf(args[0])));
+		return Value::integer(0);
 	});
 	
 	
@@ -239,11 +239,11 @@ void sme::library::InstallDefault(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "tabsize expects 1 arguments");
-			return null();
+			return Value::null();
 		}
 		Value target = engine.follow(args[0]);
-		if (engine.typeOf(target) != Type::Table) return integer(0);
-		return integer(static_cast<int>(engine.lengthOf(target)));
+		if (engine.typeOf(target) != Type::Table) return Value::integer(0);
+		return Value::integer(static_cast<int>(engine.lengthOf(target)));
 	});
 	
 	
@@ -251,11 +251,11 @@ void sme::library::InstallDefault(Engine& engine)
 	{
 		if (args.size() != 2) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "tabresize expects 1 arguments");
-			return null();
+			return Value::null();
 		}
 		const int size =  engine.integerOf(args[1]);
 		engine.resizeTable(args[0], size < 0 ? 0 : static_cast<size_t>(size));
-		return integer(0);
+		return Value::integer(0);
 	});
 	
 	
@@ -263,9 +263,9 @@ void sme::library::InstallDefault(Engine& engine)
 	{
 		if (args.size() != 1) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "typeof expects 1 arguments");
-			return null();
+			return Value::null();
 		}
-		return integer(engine.typeCode(args[0]));
+		return Value::integer(engine.typeCode(args[0]));
 	});
 	
 	
@@ -277,7 +277,7 @@ void sme::library::InstallDefault(Engine& engine)
 			const int i = engine.integerOf(args[0]);
 			if (i < 0) {
 				engine.Error(error::Code::FUNCTION_ARGUMENTS, "call bad arguments");
-				return null();
+				return Value::null();
 			}
 			
 			return engine.callIndex(static_cast<size_t>(i), {});
@@ -286,12 +286,12 @@ void sme::library::InstallDefault(Engine& engine)
 			const int i = engine.integerOf(args.back());
 			if (i < 0) {
 				engine.Error(error::Code::FUNCTION_ARGUMENTS, "call bad arguments");
-				return null();
+				return Value::null();
 			}
 			
 			const std::span<const Value> forwarded = args.first(args.size() - 1);
 			return engine.callIndex(static_cast<size_t>(i), forwarded);
 		}
-		return integer(0);
+		return Value::integer(0);
 	});
 }

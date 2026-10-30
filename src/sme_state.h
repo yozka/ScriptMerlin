@@ -18,41 +18,11 @@ namespace sme {
 // Внутреннее состояние движка: байткод и кадры.
 // Публичный API — Engine. Сюда смотрят компилятор и интерпретатор.
 
-// Таблица скрипта: плоский вектор, индекс — целое с нуля.
-struct Table {
-    std::vector<Value> items;
-};
-
-// Объект хоста с RAII-владением.
-struct HostBox {
-    std::shared_ptr<HostObject> object;
-};
-
-// Объекты со значимым сроком жизни хранятся через shared_ptr в Value.
-using StoredObject = std::variant<Table, HostBox>;
-
-struct Object {
-    template <class T>
-    explicit Object(T&& value) : data(std::forward<T>(value)) {}
-
-    StoredObject data;
-};
-
-#define OT_TAB 0
-#define OT_OBJ 1
-
-#define OT_CHECK(index, type) \
-    static_assert(std::is_same_v<std::variant_alternative_t<(index), StoredObject>, type>, \
-        #index " is not " #type " in Object")
-
-OT_CHECK(OT_TAB, Table);
-OT_CHECK(OT_OBJ, HostBox);
-static_assert(std::variant_size_v<StoredObject> == 2, "Object gained or lost an alternative");
 using Factory = std::function<std::shared_ptr<HostObject>()>;
 
 // Константа байткода. Строка здесь ещё текст: LoadConst копирует её в Value
 // при первом выполнении и затем использует interned-значение.
-using Constant = std::variant<std::monostate, int, float, bool, std::string, Pointer>;
+using Constant = std::variant<std::monostate, int, float, bool, std::string, std::nullptr_t>;
 
 // Байткод регистровой машины. r[n] — регистр текущего кадра.
 // Арифметика с двумя операндами пишет r[a] = r[b] □ r[c], если не сказано иначе.
@@ -179,7 +149,6 @@ struct State {
     uint32_t freshReferenceId();
     void fail(const std::string& message, int line = 0);
 
-    Value makeString(std::string text);
     std::string toString(const Value& value) const;
     std::string_view typeName(const Value& value) const;
     Type typeOf(const Value& value) const;

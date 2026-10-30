@@ -170,7 +170,7 @@ private:
         }
         case Expr::Kind::Null: {
             uint16_t dest = allocTemp();
-            if (expr.intValue == 1) emit(Op::LoadConst, dest, addConst(Pointer{}), 0, 0, 0, expr.line);
+            if (expr.intValue == 1) emit(Op::LoadConst, dest, addConst(nullptr), 0, 0, 0, expr.line);
             else emit(Op::LoadConst, dest, addConst(std::monostate{}), 0, 0, 0, expr.line);
             return dest;
         }

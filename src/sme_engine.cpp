@@ -16,7 +16,7 @@
 namespace sme {
 namespace {
 
-std::string render(const State& state, const Value& value, std::vector<Handle>& seen);
+std::string render(const State& state, const Value& value, std::vector<TableHandle>& seen);
 
 }  // анонимное пространство имён
 
@@ -40,10 +40,6 @@ void State::fail(const std::string& message, int line) {
     throw RError(message, line);
 }
 
-Value State::makeString(std::string text) {
-    return Value(std::move(text));
-}
-
 Type State::typeOf(const Value& value) const {
     // Сначала частые типы: два сравнения и прямой переход быстрее таблицы switch.
     const auto kind = value.index();
@@ -55,15 +51,19 @@ Type State::typeOf(const Value& value) const {
         return text ? Type::String : Type::Invalid;
     }
     if (kind == VT_NULL) return Type::Null;
+    if (kind == VT_TABLE) {
+        const TableHandle& table = std::get<TableHandle>(value);
+        return table ? Type::Table : Type::Invalid;
+    }
     if (kind == VT_HANDLE) {
         const Handle* handle = std::get_if<Handle>(&value);
         if (handle == nullptr || !*handle) return Type::Invalid;
-        const auto stored = (*handle)->data.index();
-        if (stored == OT_TAB) return Type::Table;
-        if (stored == OT_OBJ) return Type::Object;
-        return Type::Invalid;
+        return Type::Object;
     }
-    if (kind == VT_REF) return Type::Ref;
+    if (kind == VT_SHARED_VALUE) {
+        return std::get<SharedValue>(value) ? Type::Ref : Type::Invalid;
+    }
+    if (kind == VT_LOCAL_REF || kind == VT_GLOBAL_REF || kind == VT_INDEXED_REF) return Type::Ref;
     if (kind == VT_BOOL) return Type::Bool;
     if (kind == VT_PTR) return Type::Pointer;
     return Type::Invalid;
@@ -100,7 +100,7 @@ size_t State::lengthOf(const Value& value) const {
     case Type::String:
         return stringOf(value).size();
     case Type::Table:
-        return std::get<Table>(std::get<Handle>(value)->data).items.size();
+        return std::get<TableHandle>(value)->size();
     default:
         throw RError("len expects a string or a table");
     }
@@ -141,7 +141,7 @@ std::string_view State::constantString(const Chunk& chunk, size_t index, int lin
 
 namespace {
 
-std::string render(const State& state, const Value& value, std::vector<Handle>& seen) {
+std::string render(const State& state, const Value& value, std::vector<TableHandle>& seen) {
     switch (state.typeOf(value)) {
     case Type::Null:
     case Type::Pointer:
@@ -167,15 +167,14 @@ std::string render(const State& state, const Value& value, std::vector<Handle>& 
         break;
     }
 
-    Handle handle = std::get<Handle>(value);
-    if (std::find(seen.begin(), seen.end(), handle) != seen.end()) return "[...]";
+    TableHandle table = std::get<TableHandle>(value);
+    if (std::find(seen.begin(), seen.end(), table) != seen.end()) return "[...]";
 
-    seen.push_back(handle);
-    const Table& table = std::get<Table>(handle->data);
+    seen.push_back(table);
     std::string out = "[";
-    for (size_t i = 0; i < table.items.size(); ++i) {
+    for (size_t i = 0; i < table->size(); ++i) {
         if (i != 0) out += ", ";
-        out += render(state, table.items[i], seen);
+        out += render(state, (*table)[i], seen);
     }
     out += "]";
     seen.pop_back();
@@ -185,7 +184,7 @@ std::string render(const State& state, const Value& value, std::vector<Handle>& 
 }  // анонимное пространство имён
 
 std::string State::toString(const Value& value) const {
-    std::vector<Handle> seen;
+    std::vector<TableHandle> seen;
     return render(*this, value, seen);
 }
 
@@ -244,7 +243,7 @@ void Engine::bind(std::string name, std::shared_ptr<HostObject> object) {
             throw RError("global '" + name + "' shadows function '" + name + "'");
         }
     }
-    Value value(std::make_shared<Object>(HostBox{std::move(object)}));
+    Value value(std::move(object));
     for (Global& global : state_->globals) {
         if (global.name == name) {
             global.value = std::move(value);
@@ -268,24 +267,24 @@ void Engine::compileUnit(const SourceUnit& unit, std::string_view name) {
     };
     auto initial = [&](GlobalKind kind) {
         switch (kind) {
-        case GlobalKind::Int: return integer(0);
-        case GlobalKind::Float: return real(0.f);
-        case GlobalKind::Str: return state_->makeString("");
+        case GlobalKind::Int: return Value::integer(0);
+        case GlobalKind::Float: return Value::real(0.f);
+        case GlobalKind::Str: return Value::string({});
         case GlobalKind::Tab: return makeTable({});
-        case GlobalKind::Ptr: return pointer();
+        case GlobalKind::Ptr: return Value::pointer();
         case GlobalKind::Dynamic:
-        case GlobalKind::Ref: return null();
+        case GlobalKind::Ref: return Value::null();
         }
-        return null();
+        return Value::null();
     };
-    for (const std::string& global : unit.globals) addGlobal(global, null());
+    for (const std::string& global : unit.globals) addGlobal(global, Value::null());
     for (const Literal& literal : unit.literals) {
-        Value value = null();
+        Value value = Value::null();
         switch (literal.kind) {
-        case Literal::Kind::Int: value = integer(literal.integer); break;
-        case Literal::Kind::Float: value = real(literal.real); break;
-        case Literal::Kind::String: value = state_->makeString(literal.text); break;
-        case Literal::Kind::Pointer: value = pointer(); break;
+        case Literal::Kind::Int: value = Value::integer(literal.integer); break;
+        case Literal::Kind::Float: value = Value::real(literal.real); break;
+        case Literal::Kind::String: value = Value::string(literal.text); break;
+        case Literal::Kind::Pointer: value = Value::pointer(); break;
         case Literal::Kind::Null: break;
         }
         bool replaced = false;
@@ -382,7 +381,7 @@ Value Engine::resume() {
 
 Value Engine::globalAt(size_t index) const {
     if (index >= state_->globals.size()) {
-        return null();
+        return Value::null();
     }
     return state_->globals[index].value;
 }
@@ -396,7 +395,6 @@ std::optional<size_t> Engine::functionScope(std::string_view name) const {
     return std::nullopt;
 }
 
-Value Engine::makeString(std::string text) { return state_->makeString(std::move(text)); }
 std::string Engine::toString(const Value& value) const { return state_->toString(value); }
 std::string_view Engine::typeName(const Value& value) const { return state_->typeName(value); }
 
@@ -466,40 +464,38 @@ Value Engine::callIndex(size_t index, std::span<const Value> args) {
 }
 
 bool Engine::isReference(const Value& value) const {
-    return std::holds_alternative<Reference>(value);
+    return value.isReference();
 }
 
 Value Engine::follow(const Value& value) const {
     if (!isReference(value)) {
         return value;
     }
-    const Reference ref = std::get<Reference>(value);
-    if (ref.isIndexed()) {
-        const IndexedReference& indexed = ref.indexed();
-        if (!indexed.container) {
-            return null();
-        }
-        const StoredObject& object = indexed.container->data;
-        const auto* table = std::get_if<Table>(&object);
-        if (!table || indexed.index >= table->items.size()) {
-            return null();
-        }
-        return table->items[indexed.index];
+    if (const auto* link = std::get_if<SharedValue>(&value)) {
+        return *link ? **link : Value::null();
     }
-    if (ref.isGlobal()) {
-        const GlobalReference& global = ref.global();
-        if (global.slot >= state_->globals.size()) {
-            return null();
+    if (const auto* indexed = std::get_if<IndexedReference>(&value)) {
+        if (!indexed->container) {
+            return Value::null();
         }
-        return state_->globals[global.slot].value;
+        if (indexed->index >= indexed->container->size()) {
+            return Value::null();
+        }
+        return (*indexed->container)[indexed->index];
     }
-    const LocalReference& local = ref.local();
+    if (const auto* global = std::get_if<GlobalReference>(&value)) {
+        if (global->slot >= state_->globals.size()) {
+            return Value::null();
+        }
+        return state_->globals[global->slot].value;
+    }
+    const LocalReference& local = std::get<LocalReference>(value);
     if (state_->runStack.empty() || local.frame >= state_->runStack.back().frames.size()) {
-        return null();
+        return Value::null();
     }
     const Frame& frame = state_->runStack.back().frames[local.frame];
     if (frame.generation != local.frameGeneration || local.slot >= frame.regs.size()) {
-        return null();
+        return Value::null();
     }
     return frame.regs[local.slot];
 }
@@ -525,12 +521,13 @@ void Engine::resizeTable(const Value& table, size_t size) {
     if (state_->typeOf(target) != Type::Table) {
         throw RError("tabresize expects a table");
     }
-    Table& items = std::get<Table>(std::get<Handle>(target)->data);
-    items.items.resize(size, integer(0));
+    std::get<TableHandle>(target)->resize(size, Value::integer(0));
 }
 
 Value Engine::makeTable(std::vector<Value> items) {
-    return Value(std::make_shared<Object>(Table{std::move(items)}));
+    auto table = std::make_shared<Table>();
+    table->assign(std::make_move_iterator(items.begin()), std::make_move_iterator(items.end()));
+    return Value(std::in_place_type<TableHandle>, std::move(table));
 }
 
 

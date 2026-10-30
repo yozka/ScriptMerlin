@@ -83,9 +83,9 @@ public:
     void release() override { ++released; }
 
     sme::Value get(sme::Engine& engine, std::string_view name) override {
-        if (name == "test_int") return sme::integer(testInt_);
-        if (name == "test_str") return engine.makeString(testStr_);
-        if (name == "test_out") return engine.makeString(testOut_);
+        if (name == "test_int") return sme::Value::integer(testInt_);
+        if (name == "test_str") return sme::Value::string(testStr_);
+        if (name == "test_out") return sme::Value::string(testOut_);
         return HostObject::get(engine, name);
     }
 
@@ -106,13 +106,13 @@ public:
     sme::Value call(sme::Engine& engine, std::string_view name, std::span<const sme::Value> args) override {
         if (name == "run") {
             testOut_ = testStr_ + std::to_string(testInt_);
-            return sme::null();
+            return sme::Value::null();
         }
         if (name == "join" && args.size() == 2 && std::holds_alternative<int>(args[0]) && engine.typeOf(args[1]) == sme::Type::String) {
-            return engine.makeString(std::to_string(std::get<int>(args[0])) + engine.stringOf(args[1]));
+            return sme::Value::string(std::to_string(std::get<int>(args[0])) + engine.stringOf(args[1]));
         }
         if (name == "add" && args.size() == 2 && std::holds_alternative<int>(args[0]) && std::holds_alternative<int>(args[1])) {
-            return sme::integer(std::get<int>(args[0]) + std::get<int>(args[1]));
+            return sme::Value::integer(std::get<int>(args[0]) + std::get<int>(args[1]));
         }
         return HostObject::call(engine, name, args);
     }
@@ -1184,6 +1184,27 @@ TEST(ValueOwnership, CyclicTableOwnershipIsRejected)
     )");
 
     EXPECT_THROW(engine.call("cycle"), sme::RError);
+}
+
+TEST(ValueOwnership, TablesAndSharedValuesAreAccessibleDirectly)
+{
+    auto items = std::make_shared<sme::Table>();
+    items->emplace_back(42);
+    sme::Value table(std::in_place_type<sme::TableHandle>, items);
+    const auto* storedTable = std::get_if<sme::TableHandle>(&table);
+    ASSERT_NE(storedTable, nullptr);
+    ASSERT_TRUE(*storedTable);
+    ASSERT_EQ((*storedTable)->size(), 1u);
+    EXPECT_EQ(std::get<int>((**storedTable)[0]), 42);
+
+    sme::Value linked = sme::Value::shared(sme::Value::integer(7));
+    sme::Value linkedCopy = linked;
+    const auto* sharedValue = std::get_if<sme::SharedValue>(&linked);
+    ASSERT_NE(sharedValue, nullptr);
+    ASSERT_TRUE(*sharedValue);
+    EXPECT_EQ(std::get<int>(**sharedValue), 7);
+    **sharedValue = sme::Value::integer(11);
+    EXPECT_EQ(std::get<int>(*std::get<sme::SharedValue>(linkedCopy)), 11);
 }
 
 TEST(ScriptObject, test_PropCompound)
