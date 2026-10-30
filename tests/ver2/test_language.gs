@@ -100,6 +100,14 @@ func test_RefAlias()
 	return n;
 }
 
+func test_RefIdentity()
+{
+	n = 0;
+	p = &n;
+	q = p;
+	return (p == q) * 10 + (p == &n);
+}
+
 func paint(x, y, color)
 {
 	if(!?x) x = 1;

@@ -28,21 +28,8 @@ struct HostBox {
     std::shared_ptr<HostObject> object;
 };
 
-// Ссылка скрипта: &локал, &глобал или &таблица[i].
-// Ссылка на локал помнит поколение кадра. Индекс в стеке после return
-// занимают заново, и без поколения старая ссылка прочитала бы чужой регистр.
-struct Reference {
-    bool global = false;
-    bool indexed = false;
-    size_t frame = 0;
-    size_t frameGeneration = 0;
-    size_t slot = 0;
-    Handle container{};
-    size_t index = 0;
-};
-
 // Объекты со значимым сроком жизни хранятся через shared_ptr в Value.
-using StoredObject = std::variant<Table, HostBox, Reference>;
+using StoredObject = std::variant<Table, HostBox>;
 
 struct Object {
     template <class T>
@@ -53,7 +40,6 @@ struct Object {
 
 #define OT_TAB 0
 #define OT_OBJ 1
-#define OT_REF 2
 
 #define OT_CHECK(index, type) \
     static_assert(std::is_same_v<std::variant_alternative_t<(index), StoredObject>, type>, \
@@ -61,8 +47,7 @@ struct Object {
 
 OT_CHECK(OT_TAB, Table);
 OT_CHECK(OT_OBJ, HostBox);
-OT_CHECK(OT_REF, Reference);
-static_assert(std::variant_size_v<StoredObject> == 3, "Object gained or lost an alternative");
+static_assert(std::variant_size_v<StoredObject> == 2, "Object gained or lost an alternative");
 using Factory = std::function<std::shared_ptr<HostObject>()>;
 
 // Константа байткода. Строка здесь ещё текст: LoadConst копирует её в Value
@@ -99,6 +84,8 @@ enum class Op : uint8_t {
     Jump,         // ip = a
     JumpIfFalse,  // если r[a] ложно, ip = b
     JumpIfTrue,
+    JumpIfNotLe,  // если r[a] <= r[b] ложно, ip = c
+    IncJumpLe,    // r[a] += 1; если r[a] <= r[b], ip = c
     Call,         // r[a] = функция[b](r[c] .. count d); лишние аргументы отбрасываются, нехватка остаётся null
     CallNative,   // r[a] = натив[b](r[c] .. count d)
     Return,       // вернуть r[a] в вызывающий кадр или хосту
@@ -184,10 +171,12 @@ struct State {
     log::ILogging::Ptr log;
     std::vector<RunState> runStack;
     size_t frameSerial = 1;
+    uint32_t referenceSerial = 1;
     std::string sourceName = "script";
     size_t scope = 0;
 
     size_t freshFrameId();
+    uint32_t freshReferenceId();
     void fail(const std::string& message, int line = 0);
 
     Value makeString(std::string text);

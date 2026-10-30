@@ -7,6 +7,7 @@
 // RunGuard в run/resume снимает тот RunState, который этот вход положил.
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstdio>
 #include <sstream>
@@ -18,6 +19,11 @@
 
 namespace sme {
 namespace {
+
+inline Value& fastReg(Frame& frame, size_t index) {
+    assert(index < frame.regs.size());
+    return frame.regs[index];
+}
 
 struct Number {
     bool isFloat = false;
@@ -38,16 +44,42 @@ std::optional<Number> asNumber(const Value& value) {
 }
 
 Value intBinary(Op op, int x, int y, int line) {
+#if !defined(__clang__) && !defined(__GNUC__)
     auto overflow = [&](int64_t z) {
         if (z > std::numeric_limits<int>::max() || z < std::numeric_limits<int>::min()) {
             throw RError("integer overflow", line);
         }
         return integer(static_cast<int>(z));
     };
+#endif
     switch (op) {
-    case Op::Add: return overflow(static_cast<int64_t>(x) + y);
-    case Op::Sub: return overflow(static_cast<int64_t>(x) - y);
-    case Op::Mul: return overflow(static_cast<int64_t>(x) * y);
+    case Op::Add: {
+#if defined(__clang__) || defined(__GNUC__)
+        int result = 0;
+        if (__builtin_add_overflow(x, y, &result)) throw RError("integer overflow", line);
+        return integer(result);
+#else
+        return overflow(static_cast<int64_t>(x) + y);
+#endif
+    }
+    case Op::Sub: {
+#if defined(__clang__) || defined(__GNUC__)
+        int result = 0;
+        if (__builtin_sub_overflow(x, y, &result)) throw RError("integer overflow", line);
+        return integer(result);
+#else
+        return overflow(static_cast<int64_t>(x) - y);
+#endif
+    }
+    case Op::Mul: {
+#if defined(__clang__) || defined(__GNUC__)
+        int result = 0;
+        if (__builtin_mul_overflow(x, y, &result)) throw RError("integer overflow", line);
+        return integer(result);
+#else
+        return overflow(static_cast<int64_t>(x) * y);
+#endif
+    }
     case Op::Div:
         if (y == 0) throw RError("division by zero", line);
         if (x == std::numeric_limits<int>::min() && y == -1) throw RError("integer overflow", line);
@@ -92,16 +124,15 @@ std::optional<int> asInt(const Value& value) {
     return std::nullopt;
 }
 
+const std::string* stringData(const Value& value) {
+    if (const auto* text = std::get_if<std::string>(&value)) return text;
+    if (const auto* text = std::get_if<SharedString>(&value); text && *text) return text->get();
+    return nullptr;
+}
+
 }  // анонимное пространство имён
 
 Machine::Machine(Engine& engine, State& state) : engine_(engine), state_(state) {}
-
-Value& Machine::reg(Frame& frame, size_t index, int line) {
-    if (index >= frame.regs.size()) {
-        throw RError("internal register fault", line);
-    }
-    return frame.regs[index];
-}
 
 Value Machine::materialize(const Chunk& chunk, size_t constant, int line) {
     if (constant >= chunk.constants.size()) {
@@ -160,6 +191,9 @@ bool Machine::equals(const Value& lhs, const Value& rhs) {
         if (!*handle || !other) return false;
         return *handle == other;
     }
+    if (const auto* ref = std::get_if<Reference>(&lhs)) {
+        return *ref == std::get<Reference>(rhs);
+    }
     return false;
 }
 
@@ -215,17 +249,18 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
         return Value(std::make_shared<Object>(std::move(joined)));
     }
     if (op == Op::Add) {
-        auto textOf = [&](const Value& value) -> std::optional<std::string> {
-            if (const auto* text = std::get_if<std::string>(&value)) return *text;
-            if (const auto* text = std::get_if<SharedString>(&value); text && *text) return **text;
-            return std::nullopt;
-        };
-        auto leftText = textOf(lhs);
-        auto rightText = textOf(rhs);
+        const std::string* leftText = stringData(lhs);
+        const std::string* rightText = stringData(rhs);
         if (leftText || rightText) {
-            const std::string left = leftText ? *leftText : state_.toString(lhs);
-            const std::string right = rightText ? *rightText : state_.toString(rhs);
-            return state_.makeString(left + right);
+            std::string leftStorage;
+            std::string rightStorage;
+            const std::string& left = leftText ? *leftText : (leftStorage = state_.toString(lhs));
+            const std::string& right = rightText ? *rightText : (rightStorage = state_.toString(rhs));
+            std::string result;
+            result.reserve(left.size() + right.size());
+            result.append(left);
+            result.append(right);
+            return state_.makeString(std::move(result));
         }
     }
     if (op == Op::CmpEq) return integer(equals(lhs, rhs) ? 1 : 0);
@@ -410,23 +445,13 @@ Value Machine::resume() {
 namespace {
 
 bool holdsRef(const Value& value) {
-    const auto* handle = std::get_if<Handle>(&value);
-    if (!handle || !*handle) {
-        return false;
-    }
-    return std::holds_alternative<Reference>((*handle)->data);
+    return std::holds_alternative<Reference>(value);
 }
 
 void promoteString(Value& value) {
     if (auto* text = std::get_if<std::string>(&value)) {
         value = std::make_shared<std::string>(std::move(*text));
     }
-}
-
-const std::string* stringData(const Value& value) {
-    if (const auto* text = std::get_if<std::string>(&value)) return text;
-    if (const auto* text = std::get_if<SharedString>(&value); text && *text) return text->get();
-    return nullptr;
 }
 
 std::string* mutableStringData(Value& value) {
@@ -436,6 +461,13 @@ std::string* mutableStringData(Value& value) {
 }
 
 bool reachesObject(const Value& value, const Object* target, std::vector<const Object*>& visited) {
+    if (const auto* ref = std::get_if<Reference>(&value)) {
+        if (!ref->isIndexed()) return false;
+        const Handle& container = ref->indexed().container;
+        if (!container) return false;
+        if (container.get() == target) return true;
+        return reachesObject(Value{container}, target, visited);
+    }
     const auto* handle = std::get_if<Handle>(&value);
     if (!handle || !*handle) return false;
     const Object* object = handle->get();
@@ -446,9 +478,6 @@ bool reachesObject(const Value& value, const Object* target, std::vector<const O
         for (const Value& item : table->items) {
             if (reachesObject(item, target, visited)) return true;
         }
-    } else if (const auto* ref = std::get_if<Reference>(&object->data); ref && ref->indexed && ref->container) {
-        Value container{ref->container};
-        if (reachesObject(container, target, visited)) return true;
     }
     return false;
 }
@@ -463,32 +492,35 @@ Value& referenced(State& state, const Value& value, int line) {
     if (!holdsRef(value)) {
         throw RError("value is not a reference", line);
     }
-    const Reference ref = std::get<Reference>(std::get<Handle>(value)->data);
-    if (ref.indexed) {
-        if (!ref.container) {
+    const Reference& ref = std::get<Reference>(value);
+    if (ref.isIndexed()) {
+        const IndexedReference& indexed = ref.indexed();
+        if (!indexed.container) {
             throw RError("dangling reference", line);
         }
-        StoredObject& object = ref.container->data;
+        StoredObject& object = indexed.container->data;
         auto* table = std::get_if<Table>(&object);
-        if (!table || ref.index >= table->items.size()) {
+        if (!table || indexed.index >= table->items.size()) {
             throw RError("dangling reference", line);
         }
-        return table->items[ref.index];
+        return table->items[indexed.index];
     }
-    if (ref.global) {
-        if (ref.slot >= state.globals.size()) {
+    if (ref.isGlobal()) {
+        const GlobalReference& global = ref.global();
+        if (global.slot >= state.globals.size()) {
             throw RError("dangling reference", line);
         }
-        return state.globals[ref.slot].value;
+        return state.globals[global.slot].value;
     }
-    if (state.runStack.empty() || ref.frame >= state.runStack.back().frames.size()) {
+    const LocalReference& local = ref.local();
+    if (state.runStack.empty() || local.frame >= state.runStack.back().frames.size()) {
         throw RError("dangling reference", line);
     }
-    Frame& owner = state.runStack.back().frames[ref.frame];
-    if (owner.generation != ref.frameGeneration || ref.slot >= owner.regs.size()) {
+    Frame& owner = state.runStack.back().frames[local.frame];
+    if (owner.generation != local.frameGeneration || local.slot >= owner.regs.size()) {
         throw RError("dangling reference", line);
     }
-    return owner.regs[ref.slot];
+    return owner.regs[local.slot];
 }
 
 // Как gso_cast в GS9: формат — строка printf, буфер 127 символов.
@@ -553,7 +585,7 @@ std::optional<Value> Machine::execute() {
         case Op::Move: {
             // null не затирает регистр. Так a = maybe(0) оставляет прежнее a,
             // если maybe вернул null.
-            Value incoming = reg(state_.runStack.back().frames.back(), ins.b, ins.line);
+            Value incoming = fastReg(frame, ins.b);
             if (!std::holds_alternative<std::monostate>(incoming)) {
                 write(ins.a, std::move(incoming));
             }
@@ -561,7 +593,7 @@ std::optional<Value> Machine::execute() {
             break;
         }
         case Op::Copy: {
-            write(ins.a, reg(state_.runStack.back().frames.back(), ins.b, ins.line));
+            write(ins.a, fastReg(frame, ins.b));
             bump();
             break;
         }
@@ -572,7 +604,7 @@ std::optional<Value> Machine::execute() {
             break;
         case Op::StoreGlobal: {
             if (ins.a >= state_.globals.size()) throw RError("internal global fault", ins.line);
-            Value incoming = reg(state_.runStack.back().frames.back(), ins.b, ins.line);
+            Value incoming = fastReg(frame, ins.b);
             if (!std::holds_alternative<std::monostate>(incoming)) {
                 state_.globals[ins.a].value = std::move(incoming);
             }
@@ -584,7 +616,7 @@ std::optional<Value> Machine::execute() {
             bump();
             return std::nullopt;
         case Op::Typeof:
-            write(ins.a, integer(engine_.typeCode(reg(frame, ins.b, ins.line))));
+            write(ins.a, integer(engine_.typeCode(fastReg(frame, ins.b))));
             bump();
             break;
         case Op::Add: case Op::Sub: case Op::Mul: case Op::Div: case Op::Mod:
@@ -614,7 +646,7 @@ std::optional<Value> Machine::execute() {
             break;
         }
         case Op::Neg: case Op::Not: case Op::BitNot: {
-            Value value = reg(frame, ins.b, ins.line);
+            Value value = fastReg(frame, ins.b);
             write(ins.a, unary(ins.op, value, ins.line));
             bump();
             break;
@@ -624,7 +656,7 @@ std::optional<Value> Machine::execute() {
             break;
         case Op::JumpIfFalse:
         case Op::JumpIfTrue: {
-            bool flag = state_.truthy(reg(frame, ins.a, ins.line));
+            bool flag = state_.truthy(fastReg(frame, ins.a));
             if ((ins.op == Op::JumpIfFalse && !flag) || (ins.op == Op::JumpIfTrue && flag)) {
                 frame.ip = ins.b;
             } else {
@@ -632,26 +664,63 @@ std::optional<Value> Machine::execute() {
             }
             break;
         }
+        case Op::JumpIfNotLe: {
+            const Value& lhs = fastReg(frame, ins.a);
+            const Value& rhs = fastReg(frame, ins.b);
+            if (const auto* left = std::get_if<int>(&lhs); left) {
+                if (const auto* right = std::get_if<int>(&rhs); right) {
+                    if (*left > *right) frame.ip = ins.c;
+                    else bump();
+                    break;
+                }
+            }
+            const auto left = asNumber(lhs);
+            const auto right = asNumber(rhs);
+            if (!left || !right) throw RError("comparison expects numbers", ins.line);
+            if (!(left->value <= right->value)) frame.ip = ins.c;
+            else bump();
+            break;
+        }
+        case Op::IncJumpLe: {
+            const Value& limit = fastReg(frame, ins.b);
+            Value& counter = frame.regs[ins.a];
+            if (const auto* left = std::get_if<int>(&counter); left) {
+                if (*left == std::numeric_limits<int>::max()) throw RError("integer overflow", ins.line);
+                const int incremented = *left + 1;
+                counter = incremented;
+                if (const auto* right = std::get_if<int>(&limit)) {
+                    if (incremented <= *right) frame.ip = ins.c;
+                    else bump();
+                    break;
+                }
+                const auto right = asNumber(limit);
+                if (!right) throw RError("comparison expects numbers", ins.line);
+                if (static_cast<double>(incremented) <= right->value) frame.ip = ins.c;
+                else bump();
+                break;
+            }
+            Value next = binary(Op::Add, counter, integer(1), ins.line);
+            counter = std::move(next);
+            if (const auto* left = std::get_if<int>(&counter); left) {
+                if (const auto* right = std::get_if<int>(&limit); right) {
+                    if (*left <= *right) frame.ip = ins.c;
+                    else bump();
+                    break;
+                }
+            }
+            const auto left = asNumber(counter);
+            const auto right = asNumber(limit);
+            if (!left || !right) throw RError("comparison expects numbers", ins.line);
+            if (left->value <= right->value) frame.ip = ins.c;
+            else bump();
+            break;
+        }
         case Op::Call:
         case Op::CallNative: {
             if (ins.d > 0 && static_cast<size_t>(ins.c) + ins.d > frame.regs.size()) {
                 throw RError("internal argument fault", ins.line);
             }
-            Value smallArgs[8];
-            std::vector<Value> argumentStorage;
-            std::span<const Value> args;
-            if (ins.d <= 8) {
-                for (uint16_t i = 0; i < ins.d; ++i) {
-                    smallArgs[i] = frame.regs[ins.c + i];
-                }
-                args = std::span<const Value>(smallArgs, ins.d);
-            } else {
-                argumentStorage.reserve(ins.d);
-                for (uint16_t i = 0; i < ins.d; ++i) {
-                    argumentStorage.push_back(frame.regs[ins.c + i]);
-                }
-                args = argumentStorage;
-            }
+            const std::span<const Value> args(frame.regs.data() + ins.c, ins.d);
             bump();
             if (ins.op == Op::CallNative) {
                 if (ins.b >= state_.natives.size()) throw RError("internal native fault", ins.line);
@@ -676,7 +745,7 @@ std::optional<Value> Machine::execute() {
             break;
         }
         case Op::Return: {
-            Value result = reg(frame, ins.a, ins.line);
+            Value result = fastReg(frame, ins.a);
             bool writeParent = frame.writesParent;
             uint16_t dest = frame.parentDest;
             state_.runStack.back().frames.pop_back();
@@ -692,15 +761,15 @@ std::optional<Value> Machine::execute() {
             std::vector<Value> items;
             items.reserve(ins.c);
             for (uint16_t i = 0; i < ins.c; ++i) {
-                items.push_back(reg(frame, static_cast<uint16_t>(ins.b + i), ins.line));
+                items.push_back(fastReg(frame, static_cast<size_t>(ins.b) + i));
             }
             write(ins.a, Value(std::make_shared<Object>(Table{std::move(items)})));
             bump();
             break;
         }
         case Op::GetIndex: {
-            Value object = reg(frame, ins.b, ins.line);
-            Value index = reg(frame, ins.c, ins.line);
+            Value object = fastReg(frame, ins.b);
+            Value index = fastReg(frame, ins.c);
             const auto* slot = std::get_if<int>(&index);
             if (!slot || *slot < 0) throw RError("index must be a non-negative int", ins.line);
             if (const auto* text = stringData(object)) {
@@ -723,9 +792,9 @@ std::optional<Value> Machine::execute() {
             break;
         }
         case Op::SetIndex: {
-            Value index = reg(frame, ins.b, ins.line);
-            Value value = reg(frame, ins.c, ins.line);
-            Value object = reg(frame, ins.a, ins.line);
+            Value index = fastReg(frame, ins.b);
+            Value value = fastReg(frame, ins.c);
+            Value object = fastReg(frame, ins.a);
             const auto* slot = std::get_if<int>(&index);
             if (!slot || *slot < 0) throw RError("index must be a non-negative int", ins.line);
             if (!std::holds_alternative<Handle>(object) || !std::get<Handle>(object)) throw RError("value cannot be indexed", ins.line);
@@ -743,7 +812,7 @@ std::optional<Value> Machine::execute() {
         case Op::SetProp:
         case Op::CallMethod: {
             const std::string_view name = state_.constantString(chunk, ins.op == Op::SetProp ? ins.b : ins.c, ins.line);
-            Value object = reg(frame, ins.op == Op::SetProp ? ins.a : ins.b, ins.line);
+            Value object = fastReg(frame, ins.op == Op::SetProp ? ins.a : ins.b);
             if (!std::holds_alternative<Handle>(object) || !std::get<Handle>(object)) throw RError("value has no properties", ins.line);
             StoredObject& stored = std::get<Handle>(object)->data;
             auto* host = std::get_if<HostBox>(&stored);
@@ -756,22 +825,12 @@ std::optional<Value> Machine::execute() {
                 break;
             }
             if (ins.op == Op::SetProp) {
-                Value incoming = reg(state_.runStack.back().frames.back(), ins.c, ins.line);
+                Value incoming = fastReg(frame, ins.c);
                 target->set(engine_, name, incoming);
                 bump();
                 break;
             }
-            Value smallArgs[8];
-            std::vector<Value> argumentStorage;
-            std::span<const Value> args;
-            if (ins.e <= 8) {
-                for (uint16_t i = 0; i < ins.e; ++i) smallArgs[i] = frame.regs[ins.d + i];
-                args = std::span<const Value>(smallArgs, ins.e);
-            } else {
-                argumentStorage.reserve(ins.e);
-                for (uint16_t i = 0; i < ins.e; ++i) argumentStorage.push_back(frame.regs[ins.d + i]);
-                args = argumentStorage;
-            }
+            const std::span<const Value> args(frame.regs.data() + ins.d, ins.e);
             bump();
             Value result = target->call(engine_, name, args);
             state_.runStack.back().frames.back().regs[ins.a] = std::move(result);
@@ -782,43 +841,44 @@ std::optional<Value> Machine::execute() {
             Reference ref;
             auto& frames = state_.runStack.back().frames;
             promoteString(frames.back().regs[ins.b]);
-            ref.frame = frames.size() - 1;
-            ref.frameGeneration = frames.back().generation;
-            ref.slot = ins.b;
-            write(ins.a, Value(std::make_shared<Object>(ref)));
+            ref.setLocal(LocalReference{static_cast<uint32_t>(frames.size() - 1), frames.back().generation, ins.b});
+            ref.identity = state_.freshReferenceId();
+            write(ins.a, Value(std::move(ref)));
             bump();
             break;
         }
         case Op::MakeRefIndex: {
-            Value object = reg(state_.runStack.back().frames.back(), ins.b, ins.line);
-            Value index = reg(state_.runStack.back().frames.back(), ins.c, ins.line);
+            const Value& object = fastReg(frame, ins.b);
+            const Value& index = fastReg(frame, ins.c);
             const auto* slot = std::get_if<int>(&index);
             if (!slot || *slot < 0 || !std::holds_alternative<Handle>(object) || !std::get<Handle>(object)) {
                 throw RError("address expects a table element", ins.line);
             }
             Reference ref;
-            ref.indexed = true;
-            ref.container = std::get<Handle>(object);
-            ref.index = static_cast<size_t>(*slot);
-            if (auto* table = std::get_if<Table>(&ref.container->data);
-                table && ref.index < table->items.size()) {
-                promoteString(table->items[ref.index]);
+            const Handle& container = std::get<Handle>(object);
+            const uint32_t tableIndex = static_cast<uint32_t>(*slot);
+            if (auto* table = std::get_if<Table>(&container->data);
+                table && tableIndex < table->items.size()) {
+                promoteString(table->items[tableIndex]);
             }
-            write(ins.a, Value(std::make_shared<Object>(ref)));
+            ref.setIndexed(IndexedReference{container, tableIndex});
+            ref.identity = state_.freshReferenceId();
+            write(ins.a, Value(std::move(ref)));
             bump();
             break;
         }
         case Op::MakeRefGlobal: {
             Reference ref;
-            ref.global = true;
-            ref.slot = ins.b;
-            if (ref.slot < state_.globals.size()) promoteString(state_.globals[ref.slot].value);
-            write(ins.a, Value(std::make_shared<Object>(ref)));
+            ref.setGlobal(GlobalReference{ins.b});
+            const size_t slot = ref.global().slot;
+            if (slot < state_.globals.size()) promoteString(state_.globals[slot].value);
+            ref.identity = state_.freshReferenceId();
+            write(ins.a, Value(std::move(ref)));
             bump();
             break;
         }
         case Op::LoadRef: {
-            Value ref = reg(state_.runStack.back().frames.back(), ins.b, ins.line);
+            Value ref = fastReg(frame, ins.b);
             Value& target = referenced(state_, ref, ins.line);
             promoteString(target);
             write(ins.a, target);
@@ -826,12 +886,12 @@ std::optional<Value> Machine::execute() {
             break;
         }
         case Op::StoreRef: {
-            Value ref = reg(state_.runStack.back().frames.back(), ins.a, ins.line);
-            Value incoming = reg(state_.runStack.back().frames.back(), ins.b, ins.line);
+            Value ref = fastReg(frame, ins.a);
+            Value incoming = fastReg(frame, ins.b);
             if (!std::holds_alternative<std::monostate>(incoming)) {
                 if (holdsRef(ref)) {
-                    const Reference& target = std::get<Reference>(std::get<Handle>(ref)->data);
-                    if (target.indexed && createsCycle(incoming, target.container)) {
+                    const Reference& target = std::get<Reference>(ref);
+                    if (target.isIndexed() && createsCycle(incoming, target.indexed().container)) {
                         throw RError("cyclic table ownership is not supported", ins.line);
                     }
                 }
@@ -843,22 +903,23 @@ std::optional<Value> Machine::execute() {
             break;
         }
         case Op::RefGlobal: {
-            Value index = reg(state_.runStack.back().frames.back(), ins.b, ins.line);
+            Value index = fastReg(frame, ins.b);
             const auto* slot = std::get_if<int>(&index);
             if (!slot || *slot < 0 || static_cast<size_t>(*slot) >= state_.globals.size()) {
                 throw RError("global index out of range", ins.line);
             }
             Reference ref;
-            ref.global = true;
-            ref.slot = static_cast<size_t>(*slot);
-            promoteString(state_.globals[ref.slot].value);
-            write(ins.a, Value(std::make_shared<Object>(ref)));
+            const uint32_t globalSlot = static_cast<uint32_t>(*slot);
+            ref.setGlobal(GlobalReference{globalSlot});
+            promoteString(state_.globals[globalSlot].value);
+            ref.identity = state_.freshReferenceId();
+            write(ins.a, Value(std::move(ref)));
             bump();
             break;
         }
         case Op::GetChar: {
-            Value object = reg(state_.runStack.back().frames.back(), ins.b, ins.line);
-            Value index = reg(state_.runStack.back().frames.back(), ins.c, ins.line);
+            Value object = fastReg(frame, ins.b);
+            Value index = fastReg(frame, ins.c);
             const auto* slot = std::get_if<int>(&index);
             if (!slot || *slot < 0 || state_.typeOf(object) != Type::String) {
                 throw RError("character index expects a string", ins.line);
@@ -870,9 +931,9 @@ std::optional<Value> Machine::execute() {
             break;
         }
         case Op::SetChar: {
-            Value& object = reg(state_.runStack.back().frames.back(), ins.a, ins.line);
-            Value index = reg(state_.runStack.back().frames.back(), ins.b, ins.line);
-            Value incoming = reg(state_.runStack.back().frames.back(), ins.c, ins.line);
+            Value& object = fastReg(frame, ins.a);
+            Value index = fastReg(frame, ins.b);
+            Value incoming = fastReg(frame, ins.c);
             const auto* slot = std::get_if<int>(&index);
             if (!slot || *slot < 0) throw RError("character index expects a string", ins.line);
             char byte = 0;
@@ -904,7 +965,7 @@ std::optional<Value> Machine::execute() {
             break;
         }
         case Op::Cast: {
-            Value value = reg(state_.runStack.back().frames.back(), ins.b, ins.line);
+            Value value = fastReg(frame, ins.b);
             std::string format;
             if (ins.d != 65535) {
                 format = std::string(state_.constantString(chunk, ins.d, ins.line));
@@ -949,11 +1010,10 @@ std::optional<Value> Machine::execute() {
             // Имя ищется линейно: сначала скриптовые функции, потом нативы.
             // Нет ни там, ни там — в регистр пишется int 0, не null и не ошибка.
             const std::string_view name = state_.constantString(chunk, ins.b, ins.line);
-            std::vector<Value> args;
-            args.reserve(ins.d);
-            for (uint16_t i = 0; i < ins.d; ++i) {
-                args.push_back(frame.regs[ins.c + i]);
+            if (ins.d > 0 && static_cast<size_t>(ins.c) + ins.d > frame.regs.size()) {
+                throw RError("internal argument fault", ins.line);
             }
+            const std::span<const Value> args(frame.regs.data() + ins.c, ins.d);
             bump();
             auto function = std::find_if(state_.functions.begin(), state_.functions.end(), [&](const Chunk& item) {
                 return item.name == name;
@@ -969,7 +1029,7 @@ std::optional<Value> Machine::execute() {
                 const uint16_t count = std::min<uint16_t>(ins.d, function->parameterCount);
                 next.supplied = count;
                 for (uint16_t i = 0; i < count && i < next.regs.size(); ++i) {
-                    next.regs[i] = std::move(args[i]);
+                    next.regs[i] = args[i];
                 }
                 state_.runStack.back().frames.push_back(std::move(next));
                 break;

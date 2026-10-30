@@ -28,6 +28,11 @@ size_t State::freshFrameId() {
     return id;
 }
 
+uint32_t State::freshReferenceId() {
+    if (referenceSerial == 0) throw RError("reference identity exhausted");
+    return referenceSerial++;
+}
+
 void State::fail(const std::string& message, int line) {
     if (log) {
         log->message(log::Level::Error, message);
@@ -56,9 +61,9 @@ Type State::typeOf(const Value& value) const {
         const auto stored = (*handle)->data.index();
         if (stored == OT_TAB) return Type::Table;
         if (stored == OT_OBJ) return Type::Object;
-        if (stored == OT_REF) return Type::Ref;
         return Type::Invalid;
     }
+    if (kind == VT_REF) return Type::Ref;
     if (kind == VT_BOOL) return Type::Bool;
     if (kind == VT_PTR) return Type::Pointer;
     return Type::Invalid;
@@ -461,43 +466,42 @@ Value Engine::callIndex(size_t index, std::span<const Value> args) {
 }
 
 bool Engine::isReference(const Value& value) const {
-    const auto* handle = std::get_if<Handle>(&value);
-    if (!handle || !*handle) {
-        return false;
-    }
-    return std::holds_alternative<Reference>((*handle)->data);
+    return std::holds_alternative<Reference>(value);
 }
 
 Value Engine::follow(const Value& value) const {
     if (!isReference(value)) {
         return value;
     }
-    const Reference ref = std::get<Reference>(std::get<Handle>(value)->data);
-    if (ref.indexed) {
-        if (!ref.container) {
+    const Reference ref = std::get<Reference>(value);
+    if (ref.isIndexed()) {
+        const IndexedReference& indexed = ref.indexed();
+        if (!indexed.container) {
             return null();
         }
-        const StoredObject& object = ref.container->data;
+        const StoredObject& object = indexed.container->data;
         const auto* table = std::get_if<Table>(&object);
-        if (!table || ref.index >= table->items.size()) {
+        if (!table || indexed.index >= table->items.size()) {
             return null();
         }
-        return table->items[ref.index];
+        return table->items[indexed.index];
     }
-    if (ref.global) {
-        if (ref.slot >= state_->globals.size()) {
+    if (ref.isGlobal()) {
+        const GlobalReference& global = ref.global();
+        if (global.slot >= state_->globals.size()) {
             return null();
         }
-        return state_->globals[ref.slot].value;
+        return state_->globals[global.slot].value;
     }
-    if (state_->runStack.empty() || ref.frame >= state_->runStack.back().frames.size()) {
+    const LocalReference& local = ref.local();
+    if (state_->runStack.empty() || local.frame >= state_->runStack.back().frames.size()) {
         return null();
     }
-    const Frame& frame = state_->runStack.back().frames[ref.frame];
-    if (frame.generation != ref.frameGeneration || ref.slot >= frame.regs.size()) {
+    const Frame& frame = state_->runStack.back().frames[local.frame];
+    if (frame.generation != local.frameGeneration || local.slot >= frame.regs.size()) {
         return null();
     }
-    return frame.regs[ref.slot];
+    return frame.regs[local.slot];
 }
 
 int32_t Engine::typeCode(const Value& value) const {

@@ -289,7 +289,7 @@ void sme::library::InstallDefault(Engine& engine)
 				return null();
 			}
 			
-			std::vector<Value> forwarded(args.begin(), args.end() - 1);
+			const std::span<const Value> forwarded = args.first(args.size() - 1);
 			return engine.callIndex(static_cast<size_t>(i), forwarded);
 		}
 		return integer(0);

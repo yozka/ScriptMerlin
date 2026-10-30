@@ -1233,6 +1233,12 @@ TEST(Language, RefAlias)
     EXPECT_EQ(script.integer(), 8);
 }
 
+TEST(Language, RefIdentity)
+{
+    Result script = run("ver2/test_language.gs", "test_RefIdentity");
+    EXPECT_EQ(script.integer(), 10);
+}
+
 TEST(Language, DefaultParams)
 {
     Result script = run("ver2/test_language.gs", "test_DefaultParams");
