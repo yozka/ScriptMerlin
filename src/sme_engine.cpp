@@ -97,7 +97,7 @@ void Engine::compileUnit(const SourceUnit& unit, std::string_view name) {
     auto initial = [&](GlobalKind kind) {
         switch (kind) {
         case GlobalKind::Int: return Value::Integer(0);
-        case GlobalKind::Float: return Value::Real(0.f);
+        case GlobalKind::Float: return Value::Float(0.f);
         case GlobalKind::Str: return Value::String({});
         case GlobalKind::Tab: return makeTable({});
         case GlobalKind::Ptr: return Value::Pointer();
@@ -111,7 +111,7 @@ void Engine::compileUnit(const SourceUnit& unit, std::string_view name) {
         Value value = Value::Null();
         switch (literal.kind) {
         case Literal::Kind::Int: value = Value::Integer(literal.integer); break;
-        case Literal::Kind::Float: value = Value::Real(literal.real); break;
+        case Literal::Kind::Float: value = Value::Float(literal.real); break;
         case Literal::Kind::String: value = Value::String(literal.text); break;
         case Literal::Kind::Pointer: value = Value::Pointer(); break;
         case Literal::Kind::Null: break;

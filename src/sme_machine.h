@@ -21,7 +21,7 @@ public:
 private:
     // nullopt значит «встали на stop», значение — нормальный return наружу.
     std::optional<Value> execute();
-    Value materialize(const Chunk& chunk, size_t constant, int line);
+    Value materialize(Chunk& chunk, size_t constant, int line);
     Value binary(Op op, const Value& lhs, const Value& rhs, int line);
     Value unary(Op op, const Value& value, int line);
     bool equals(const Value& lhs, const Value& rhs);

@@ -104,7 +104,7 @@ struct Chunk {
     std::vector<Instruction> code;
     std::vector<Constant> constants;
     // Строковые константы разделяют владельца и живут, пока жив chunk или Value.
-    mutable std::vector<Value> interned;
+    std::vector<Value> interned;
     size_t scope = 0; // копия #scope файла, одна на все функции загрузки
 };
 

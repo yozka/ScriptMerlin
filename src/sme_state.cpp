@@ -31,7 +31,7 @@ bool State::truthy(const Value& value) const {
     case Type::Int: return std::get<int>(value) != 0;
     case Type::Float: return std::get<float>(value) != 0.f;
     case Type::Bool: return std::get<bool>(value);
-    case Type::String: return !value.AsString().empty();
+    case Type::String: return !value.ToString().empty();
     case Type::Null:
     case Type::Pointer:
     case Type::Invalid:

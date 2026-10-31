@@ -39,7 +39,7 @@ void sme::library::InstallDefault(Engine& engine)
 			}
 			return Value::String(std::string(static_cast<size_t>(*count), '\0'));
 		}
-		return Value::String(args[0].ToString());
+		return Value::String(args[0].CastString());
 	});
 	
 	
@@ -72,7 +72,7 @@ void sme::library::InstallDefault(Engine& engine)
 		std::string line;
 		for (size_t i = 0; i < args.size(); ++i) {
 			if (i != 0) line.push_back(' ');
-			line += args[i].ToString();
+			line += args[i].CastString();
 		}
 		engine.Log(log::Level::Output, line);
 		return Value::Null();
@@ -84,7 +84,7 @@ void sme::library::InstallDefault(Engine& engine)
 		std::string line;
 		for (size_t i = 0; i < args.size(); ++i) {
 			if (i != 0) line.push_back(' ');
-			line += args[i].ToString();
+			line += args[i].CastString();
 		}
 		engine.Log(log::Level::Output, line);
 		return Value::Null();
@@ -103,7 +103,7 @@ void sme::library::InstallDefault(Engine& engine)
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "strlen expects a string");
 			return Value::Null();
 		}
-		const std::string text = value.AsString();
+		const std::string text = value.ToString();
 		const auto end = text.find('\0');
 		return Value::Integer(static_cast<int>(end == std::string::npos ? text.size() : end));
 	});
@@ -116,9 +116,9 @@ void sme::library::InstallDefault(Engine& engine)
 			return Value::Null();
 		}
 		
-		const std::string text = args[0].AsString();
-		const int start = args[1].AsInteger();
-		const int length = args[2].AsInteger();
+		const std::string text = args[0].ToString();
+		const int start = args[1].ToInteger();
+		const int length = args[2].ToInteger();
 
 		size_t begin = static_cast<size_t>(start < 0 ? 0 : start);
 		if (begin >= text.size()) return Value::String({});
@@ -138,8 +138,8 @@ void sme::library::InstallDefault(Engine& engine)
 			return Value::Null();
 		}
 		
-		const std::string text = args[0].AsString();
-		const std::string needle = args[1].AsString();
+		const std::string text = args[0].ToString();
+		const std::string needle = args[1].ToString();
 		const size_t found = text.find(needle);
 		if (found == std::string::npos) return Value::Integer(-1);
 		return Value::Integer(static_cast<int>(found));
@@ -153,8 +153,8 @@ void sme::library::InstallDefault(Engine& engine)
 			return Value::Null();
 		}
 
-		const std::string text = args[0].AsString();
-		const char delimiter = static_cast<char>(args[1].AsInteger());
+		const std::string text = args[0].ToString();
+		const char delimiter = static_cast<char>(args[1].ToInteger());
 		std::vector<Value> parts;
 		std::string piece;
 		for (char character : text) {
@@ -177,7 +177,7 @@ void sme::library::InstallDefault(Engine& engine)
 			return Value::Null();
 		}
 		
-		std::string text = args[0].AsString();
+		std::string text = args[0].ToString();
 		for (char& character : text) {
 			character = static_cast<char>(std::toupper(static_cast<unsigned char>(character)));
 		}
@@ -192,7 +192,7 @@ void sme::library::InstallDefault(Engine& engine)
 			return Value::Null();
 		}
 		
-		std::string text = args[0].AsString();
+		std::string text = args[0].ToString();
 		for (char& character : text) {
 			character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
 		}
@@ -207,8 +207,8 @@ void sme::library::InstallDefault(Engine& engine)
 			return Value::Null();
 		}
 		
-		const std::string text = args[0].AsString();
-		const std::string cut = args[1].AsString();
+		const std::string text = args[0].ToString();
+		const std::string cut = args[1].ToString();
 		size_t begin = 0;
 		size_t end = text.size();
 		while (begin < end && cut.find(text[begin]) != std::string::npos) ++begin;
@@ -225,7 +225,7 @@ void sme::library::InstallDefault(Engine& engine)
 		}
 		if (args[0].IsReference()) return Value::Integer(0);
 		if (args[0].IsString()) {
-			const std::string text = args[0].AsString();
+			const std::string text = args[0].ToString();
 			const int32_t size = static_cast<int>(text.size());
 			return Value::Integer(text.find('\0') == std::string::npos ? size + 1 : size);
 		}
@@ -252,7 +252,7 @@ void sme::library::InstallDefault(Engine& engine)
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "tabresize expects 1 arguments");
 			return Value::Null();
 		}
-		const int size = args[1].AsInteger();
+		const int size = args[1].ToInteger();
 		engine.resizeTable(args[0], size < 0 ? 0 : static_cast<size_t>(size));
 		return Value::Integer(0);
 	});
@@ -273,7 +273,7 @@ void sme::library::InstallDefault(Engine& engine)
 	engine.RegisterNative("call", [](Engine& engine, std::span<const Value> args)
 	{
 		if (args.size() == 1 && args[0].IsInteger()) {
-			const int i = args[0].AsInteger();
+			const int i = args[0].ToInteger();
 			if (i < 0) {
 				engine.Error(error::Code::FUNCTION_ARGUMENTS, "call bad arguments");
 				return Value::Null();
@@ -282,7 +282,7 @@ void sme::library::InstallDefault(Engine& engine)
 			return engine.callIndex(static_cast<size_t>(i), {});
 		}
 		if (args.size() >= 2 && args.back().IsInteger()) {
-			const int i = args.back().AsInteger();
+			const int i = args.back().ToInteger();
 			if (i < 0) {
 				engine.Error(error::Code::FUNCTION_ARGUMENTS, "call bad arguments");
 				return Value::Null();

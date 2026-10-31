@@ -85,7 +85,7 @@ namespace sme
 		
 	public:
 		static Value Integer(int value);
-		static Value Real(float value);
+		static Value Float(float value);
 		static Value Boolean(bool value);
 		static Value String(std::string value);
 		static Value Null();
@@ -93,6 +93,11 @@ namespace sme
 		static Value Shared(Value value);
 		
 	public:
+		Type TypeOf() const;
+		int TypeCode() const; // Коды typeof сохранены для совместимости с другими скриптами.
+		std::string_view TypeName() const;
+		
+
 		bool IsNull() const;
 		bool IsReference() const;
 		bool IsInteger() const;
@@ -103,18 +108,17 @@ namespace sme
 		bool IsObject() const;
 		bool IsPointer() const;
 		bool IsInvalid() const;
+		
 		std::optional<float> AsNumber() const;
-		float AsFloat(const float def = 0.0f) const;
-		int AsInteger(const int def = 0) const;
-		std::string AsString(const std::string& def = {}) const;
+		
+		
+		float ToFloat(const float def = 0.0f) const;
+		int ToInteger(const int def = 0) const;
+		std::string ToString(const std::string& def = {}) const;
+		
+
 		size_t Length() const;
-		
-		Type TypeOf() const;
-		// Коды typeof сохранены для совместимости с другими скриптами.
-		int32_t TypeCode() const;
-		std::string_view TypeName() const;
-		
-		std::string ToString() const;
+		std::string CastString() const;
 	};
 
 

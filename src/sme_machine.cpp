@@ -115,14 +115,14 @@ const std::string* stringData(const Value& value) {
 
 Machine::Machine(Engine& engine, State& state) : engine_(engine), state_(state) {}
 
-Value Machine::materialize(const Chunk& chunk, size_t constant, int line) {
+Value Machine::materialize(Chunk& chunk, size_t constant, int line) {
     if (constant >= chunk.constants.size()) {
         throw RError("internal constant fault", line);
     }
     const Constant& value = chunk.constants[constant];
     if (std::holds_alternative<std::monostate>(value)) return Value::Null();
     if (const auto* integer = std::get_if<int>(&value)) return sme::Value::Integer(*integer);
-    if (const auto* real = std::get_if<float>(&value)) return sme::Value::Real(*real);
+    if (const auto* real = std::get_if<float>(&value)) return sme::Value::Float(*real);
     if (const auto* flag = std::get_if<bool>(&value)) return Value::Boolean(*flag);
     if (const auto* text = std::get_if<std::string>(&value)) {
         if (chunk.interned.size() != chunk.constants.size()) {
@@ -215,7 +215,7 @@ Value Machine::unary(Op op, const Value& value, int line) {
             return sme::Value::Integer(-*integer);
         }
         if (const auto* real = std::get_if<float>(&value)) {
-            return sme::Value::Real(-*real);
+            return sme::Value::Float(-*real);
         }
         throw RError("negation expects a number", line);
     }
@@ -248,8 +248,8 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
         if (leftText || rightText) {
             std::string leftStorage;
             std::string rightStorage;
-            const std::string& left = leftText ? *leftText : (leftStorage = lhs.ToString());
-            const std::string& right = rightText ? *rightText : (rightStorage = rhs.ToString());
+            const std::string& left = leftText ? *leftText : (leftStorage = lhs.CastString());
+            const std::string& right = rightText ? *rightText : (rightStorage = rhs.CastString());
             std::string result;
             result.reserve(left.size() + right.size());
             result.append(left);
@@ -315,9 +315,9 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
     }
 
     switch (op) {
-    case Op::Add: return Value::Real(static_cast<float>(a + b));
-    case Op::Sub: return Value::Real(static_cast<float>(a - b));
-    case Op::Mul: return Value::Real(static_cast<float>(a * b));
+    case Op::Add: return Value::Float(static_cast<float>(a + b));
+    case Op::Sub: return Value::Float(static_cast<float>(a - b));
+    case Op::Mul: return Value::Float(static_cast<float>(a * b));
     case Op::Div: {
         // INT_MIN / -1 непредставимо в int32. То же проверяется у остатка.
         if (b == 0) throw RError("division by zero", line);
@@ -328,7 +328,7 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
             }
             return Value::Integer(pair.first / pair.second);
         }
-        return Value::Real(static_cast<float>(a / b));
+        return Value::Float(static_cast<float>(a / b));
     }
     case Op::Mod: {
         if (b == 0) throw RError("division by zero", line);
@@ -339,7 +339,7 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
             }
             return Value::Integer(pair.first % pair.second);
         }
-        return Value::Real(static_cast<float>(std::fmod(a, b)));
+        return Value::Float(static_cast<float>(std::fmod(a, b)));
     }
     case Op::BitAnd:
     case Op::BitOr:
@@ -558,7 +558,7 @@ std::optional<Value> Machine::execute() {
             throw RError("script recursion is too deep");
         }
         Frame& frame = active.frames.back();
-        const Chunk& chunk = state_.functions[frame.function];
+        Chunk& chunk = state_.functions[frame.function];
         if (frame.ip >= chunk.code.size()) {
             throw RError("function '" + chunk.name + "' ran out of instructions");
         }
@@ -901,7 +901,7 @@ std::optional<Value> Machine::execute() {
             if (!slot || *slot < 0 || !object.IsString()) {
                 throw RError("character index expects a string", ins.line);
             }
-            const std::string text = object.AsString();
+            const std::string text = object.ToString();
             if (static_cast<size_t>(*slot) >= text.size()) throw RError("string index out of range", ins.line);
             write(ins.a, Value::Integer(static_cast<unsigned char>(text[static_cast<size_t>(*slot)])));
             bump();
@@ -917,7 +917,7 @@ std::optional<Value> Machine::execute() {
             if (const auto* number = std::get_if<int>(&incoming)) byte = static_cast<char>(*number);
             else if (const auto* text = stringData(incoming)) {
                 if (!text->empty()) byte = (*text)[0];
-            } else if (incoming.IsString() && !incoming.AsString().empty()) byte = incoming.AsString()[0];
+            } else if (incoming.IsString() && !incoming.ToString().empty()) byte = incoming.ToString()[0];
             auto* stored = mutableStringData(object);
             if (!stored) {
                 throw RError("character index expects a string", ins.line);
@@ -960,7 +960,7 @@ std::optional<Value> Machine::execute() {
                 } else if (value.IsNull()) {
                     write(ins.a, Value::String(castIntToString(0, format)));
                 } else {
-                    write(ins.a, Value::String(value.ToString()));
+                    write(ins.a, Value::String(value.CastString()));
                 }
                 bump();
                 break;
@@ -970,16 +970,16 @@ std::optional<Value> Machine::execute() {
                 else if (const auto* realValue = std::get_if<float>(&value)) write(ins.a, Value::Integer(narrowInt(*realValue, ins.line)));
                 else if (const auto* flag = std::get_if<bool>(&value)) write(ins.a, Value::Integer(*flag ? 1 : 0));
                 else if (value.IsString()) {
-                    write(ins.a, Value::Integer(castStringToInt(value.AsString(), format)));
+                    write(ins.a, Value::Integer(castStringToInt(value.ToString(), format)));
                 } else write(ins.a, Value::Integer(0));
                 bump();
                 break;
             }
-            if (const auto* realValue = std::get_if<float>(&value)) write(ins.a, Value::Real(*realValue));
-            else if (const auto* integerValue = std::get_if<int>(&value)) write(ins.a, Value::Real(static_cast<float>(*integerValue)));
+            if (const auto* realValue = std::get_if<float>(&value)) write(ins.a, Value::Float(*realValue));
+            else if (const auto* integerValue = std::get_if<int>(&value)) write(ins.a, Value::Float(static_cast<float>(*integerValue)));
             else if (value.IsString()) {
-                write(ins.a, Value::Real(castStringToFloat(value.AsString(), format)));
-            } else write(ins.a, Value::Real(0.f));
+                write(ins.a, Value::Float(castStringToFloat(value.ToString(), format)));
+            } else write(ins.a, Value::Float(0.f));
             bump();
             break;
         }

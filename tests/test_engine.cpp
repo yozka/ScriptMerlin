@@ -47,10 +47,10 @@ struct Result {
     sme::Engine* engine = nullptr;
     sme::Value value;
 
-    std::string text() const { return value.ToString(); }
+    std::string text() const { return value.CastString(); }
     int integer() const {
         if (const auto* number = std::get_if<int>(&value)) return *number;
-        ADD_FAILURE() << "expected int, got " << value.TypeName() << " " << value.ToString();
+        ADD_FAILURE() << "expected int, got " << value.TypeName() << " " << value.CastString();
         return 0;
     }
     float floating() const {
@@ -95,7 +95,7 @@ public:
             return;
         }
         if ((name == "test_str" || name == "test_out") && value.IsString()) {
-            std::string text = value.AsString();
+            std::string text = value.ToString();
             if (name == "test_str") testStr_ = std::move(text);
             else testOut_ = std::move(text);
             return;
@@ -109,7 +109,7 @@ public:
             return sme::Value::Null();
         }
         if (name == "join" && args.size() == 2 && args[0].IsInteger() && args[1].IsString()) {
-            return sme::Value::String(std::to_string(std::get<int>(args[0])) + args[1].AsString());
+            return sme::Value::String(std::to_string(std::get<int>(args[0])) + args[1].ToString());
         }
         if (name == "add" && args.size() == 2 && args[0].IsInteger() && args[1].IsInteger()) {
             return sme::Value::Integer(std::get<int>(args[0]) + std::get<int>(args[1]));
@@ -1090,7 +1090,7 @@ TEST(ScriptObject, test_Prop)
     engine.load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = engine.call("test_Prop");
     EXPECT_EQ(TStruct::alive, 0);
-    EXPECT_EQ(value.ToString(), "hello world42");
+    EXPECT_EQ(value.CastString(), "hello world42");
 }
 
 TEST(ScriptObject, test_PropCall)
@@ -1104,7 +1104,7 @@ TEST(ScriptObject, test_PropCall)
     engine.load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = engine.call("test_PropCall");
     EXPECT_EQ(TStruct::alive, 0);
-    EXPECT_EQ(value.ToString(), "7 items");
+    EXPECT_EQ(value.CastString(), "7 items");
 }
 
 TEST(ScriptObject, test_PropAdd)
@@ -1148,20 +1148,20 @@ TEST(ScriptObject, test_PropRelease)
 TEST(Value, AsNumber)
 {
     EXPECT_EQ(sme::Value::Integer(42).AsNumber(), 42.0);
-    EXPECT_EQ(sme::Value::Real(2.5f).AsNumber(), 2.5);
+    EXPECT_EQ(sme::Value::Float(2.5f).AsNumber(), 2.5);
     EXPECT_EQ(sme::Value::Boolean(true).AsNumber(), 1.0);
     EXPECT_FALSE(sme::Value::String("42").AsNumber().has_value());
-    EXPECT_EQ(sme::Value::Integer(42).AsFloat(), 42.0f);
-    EXPECT_EQ(sme::Value::Real(2.5f).AsInteger(), 2);
-    EXPECT_EQ(sme::Value::String("42").AsFloat(3.5f), 3.5f);
-    EXPECT_EQ(sme::Value::String("42").AsInteger(7), 7);
-    EXPECT_EQ(sme::Value::String("text").AsString(), "text");
-    EXPECT_EQ(sme::Value::String("text").AsString("default"), "text");
-    EXPECT_EQ(sme::Value::Integer(42).AsString("default"), "default");
+    EXPECT_EQ(sme::Value::Integer(42).ToFloat(), 42.0f);
+    EXPECT_EQ(sme::Value::Float(2.5f).ToInteger(), 2);
+    EXPECT_EQ(sme::Value::String("42").ToFloat(3.5f), 3.5f);
+    EXPECT_EQ(sme::Value::String("42").ToInteger(7), 7);
+    EXPECT_EQ(sme::Value::String("text").ToString(), "text");
+    EXPECT_EQ(sme::Value::String("text").ToString("default"), "text");
+    EXPECT_EQ(sme::Value::Integer(42).ToString("default"), "default");
     EXPECT_EQ(sme::Value::String("text").Length(), 4u);
     EXPECT_EQ(sme::Value::Null().TypeCode(), 0);
     EXPECT_EQ(sme::Value::Integer(42).TypeCode(), 1);
-    EXPECT_EQ(sme::Value::Real(2.5f).TypeCode(), 2);
+    EXPECT_EQ(sme::Value::Float(2.5f).TypeCode(), 2);
     EXPECT_EQ(sme::Value::String("text").TypeCode(), 3);
 
     auto table = std::make_shared<sme::Table>();
@@ -1201,21 +1201,21 @@ TEST(ValueOwnership, ValuesOutliveEngineAndCalls)
         value = engine.call("text");
         table = engine.call("table");
         EXPECT_TRUE(value.IsString());
-        EXPECT_EQ(value.ToString(), "a string that exceeds inline storage");
-        EXPECT_EQ(table.ToString(), "[1, 2, 3]");
+        EXPECT_EQ(value.CastString(), "a string that exceeds inline storage");
+        EXPECT_EQ(table.CastString(), "[1, 2, 3]");
         for (int i = 0; i < 100; ++i) {
             EXPECT_EQ(std::get<int>(engine.call("other")), 42);
         }
-        EXPECT_EQ(value.ToString(), "a string that exceeds inline storage");
-        EXPECT_EQ(engine.call("copy_string").ToString(), "long enough:Xong enough");
+        EXPECT_EQ(value.CastString(), "a string that exceeds inline storage");
+        EXPECT_EQ(engine.call("copy_string").CastString(), "long enough:Xong enough");
         sme::Value referenceString = engine.call("reference_string");
         EXPECT_TRUE(std::holds_alternative<sme::SharedString>(referenceString));
-        EXPECT_EQ(referenceString.ToString(), "updated string");
+        EXPECT_EQ(referenceString.CastString(), "updated string");
     }
 
     sme::Engine reader;
-    EXPECT_EQ(value.ToString(), "a string that exceeds inline storage");
-    EXPECT_EQ(table.ToString(), "[1, 2, 3]");
+    EXPECT_EQ(value.CastString(), "a string that exceeds inline storage");
+    EXPECT_EQ(table.CastString(), "[1, 2, 3]");
 }
 
 TEST(ValueOwnership, CyclicTableOwnershipIsRejected)
@@ -1264,7 +1264,7 @@ TEST(ScriptObject, test_PropCompound)
     engine.load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = engine.call("test_PropCompound");
     EXPECT_EQ(TStruct::alive, 0);
-    EXPECT_EQ(value.ToString(), "16abc");
+    EXPECT_EQ(value.CastString(), "16abc");
 }
 
 int globalInt(sme::Engine& engine, const char* name) {

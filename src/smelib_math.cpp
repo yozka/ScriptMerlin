@@ -27,7 +27,7 @@ void sme::library::InstallMath(Engine& engine)
 			}
 			return Value::Integer(std::abs(*integerValue));
 		}
-		return Value::Real(args[0].AsFloat());
+		return Value::Float(args[0].ToFloat());
 	});
 	
 	
@@ -37,7 +37,7 @@ void sme::library::InstallMath(Engine& engine)
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "floor expects 1 argument");
 			return Value::Null();
 		}
-		return Value::Real(std::floor(args[0].AsFloat()));
+		return Value::Float(std::floor(args[0].ToFloat()));
 	});
 	
 	
@@ -47,7 +47,7 @@ void sme::library::InstallMath(Engine& engine)
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "ceil expects 1 argument");
 			return Value::Null();
 		}
-		return Value::Real(std::ceil(args[0].AsFloat()));
+		return Value::Float(std::ceil(args[0].ToFloat()));
 	});
 	
 	
@@ -57,7 +57,7 @@ void sme::library::InstallMath(Engine& engine)
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "round expects 1 argument");
 			return Value::Null();
 		}
-		return Value::Real(std::round(args[0].AsFloat()));
+		return Value::Float(std::round(args[0].ToFloat()));
 	});
 	
 	
@@ -67,12 +67,12 @@ void sme::library::InstallMath(Engine& engine)
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "sqrt expects 1 argument");
 			return Value::Null();
 		}
-		const float value = args[0].AsFloat();
+		const float value = args[0].ToFloat();
 		if (value < 0) {
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "sqrt expects a non-negative number");
 			return Value::Null();
 		}
-		return Value::Real(std::sqrt(value));
+		return Value::Float(std::sqrt(value));
 	});
 	
 	
@@ -82,7 +82,7 @@ void sme::library::InstallMath(Engine& engine)
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "sin expects 1 argument");
 			return Value::Null();
 		}
-		return Value::Real(std::sin(args[0].AsFloat()));
+		return Value::Float(std::sin(args[0].ToFloat()));
 	});
 	
 	
@@ -92,7 +92,7 @@ void sme::library::InstallMath(Engine& engine)
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "cos expects 1 argument");
 			return Value::Null();
 		}
-		return Value::Real(std::cos(args[0].AsFloat()));
+		return Value::Float(std::cos(args[0].ToFloat()));
 	});
 	
 	
@@ -102,7 +102,7 @@ void sme::library::InstallMath(Engine& engine)
 			engine.Error(error::Code::FUNCTION_ARGUMENTS, "pow expects 2 argument");
 			return Value::Null();
 		}
-		return Value::Real(std::pow(args[0].AsFloat(), args[1].AsFloat()));
+		return Value::Float(std::pow(args[0].ToFloat(), args[1].ToFloat()));
 	});
 	
 	
@@ -113,9 +113,9 @@ void sme::library::InstallMath(Engine& engine)
 			return Value::Null();
 		}
 		if (args[0].IsInteger() && args[1].IsInteger()) {
-			return Value::Integer(std::min(args[0].AsInteger(), args[1].AsInteger()));
+			return Value::Integer(std::min(args[0].ToInteger(), args[1].ToInteger()));
 		}
-		return Value::Real(std::min(args[0].AsFloat(), args[1].AsFloat()));
+		return Value::Float(std::min(args[0].ToFloat(), args[1].ToFloat()));
 	});
 	
 	
@@ -126,9 +126,9 @@ void sme::library::InstallMath(Engine& engine)
 			return Value::Null();
 		}
 		if (args[0].IsInteger() && args[1].IsInteger()) {
-			return Value::Integer(std::max(args[0].AsInteger(), args[1].AsInteger()));
+			return Value::Integer(std::max(args[0].ToInteger(), args[1].ToInteger()));
 		}
-		return Value::Real(std::max(args[0].AsFloat(), args[1].AsFloat()));
+		return Value::Float(std::max(args[0].ToFloat(), args[1].ToFloat()));
 	});
 	
 }
