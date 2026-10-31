@@ -13,11 +13,11 @@
 namespace sme 
 {
 
-	class HostObject;
+	class IScriptObject;
 	class Table;
 	class Value;
 
-	using Handle = std::shared_ptr<HostObject>;
+	using Handle = std::shared_ptr<IScriptObject>;
 	using TableHandle = std::shared_ptr<Table>;
 	using SharedString = std::shared_ptr<std::string>;
 	using SharedValue = std::shared_ptr<Value>;

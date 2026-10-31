@@ -879,22 +879,22 @@ std::optional<Value> Machine::execute() {
             const std::string_view name = state_.constantString(chunk, ins.op == Op::SetProp ? ins.b : ins.c, ins.line);
             Value object = fastReg(frame, ins.op == Op::SetProp ? ins.a : ins.b);
             if (!object.IsObject()) throw RError("value has no properties", ins.line);
-            HostObject* target = std::get<Handle>(object).get();
+            IScriptObject* target = std::get<Handle>(object).get();
             if (ins.op == Op::GetProp) {
-                Value result = target->get(engine_, name);
+                Value result = target->GetProperty(engine_, name);
                 write(ins.a, std::move(result));
                 bump();
                 break;
             }
             if (ins.op == Op::SetProp) {
                 Value incoming = fastReg(frame, ins.c);
-                target->set(engine_, name, incoming);
+                target->SetProperty(engine_, name, incoming);
                 bump();
                 break;
             }
             const std::span<const Value> args(frame.regs.data() + ins.d, ins.e);
             bump();
-            Value result = target->call(engine_, name, args);
+            Value result = target->Call(engine_, name, args);
             state_.runStack.back().frames.back().regs[ins.a] = std::move(result);
             break;
         }
@@ -1010,7 +1010,7 @@ std::optional<Value> Machine::execute() {
             if (factory == state_.factories.end() || !factory->second) {
                 throw RError("unknown type '" + std::string(type) + "'", ins.line);
             }
-            std::shared_ptr<HostObject> object = factory->second();
+            std::shared_ptr<IScriptObject> object = factory->second();
             if (!object) {
                 throw RError("unknown type '" + std::string(type) + "'", ins.line);
             }

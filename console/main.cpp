@@ -1,4 +1,5 @@
 #include "sme/sme_engine.h"
+#include "sme/sme_error.h"
 #include "sme/smelib_default.h"
 #include "sme/smelib_gs.h"
 #include "sme/smelib_math.h"
@@ -8,26 +9,26 @@
 
 // Учебный хост. Counter — объект игры: скрипт видит его как глобал counter
 // и вызывает свойства value и метод add. Движок не знает про Counter заранее,
-// только про виртуальные get/set/call.
+// только про интерфейс IScriptObject.
 
-class Counter : public sme::HostObject {
+class Counter : public sme::IScriptObject {
 public:
-    sme::Value get(sme::Engine& engine, std::string_view name) override {
+    sme::Value GetProperty(sme::Engine&, std::string_view name) const override {
         if (name == "value") {
             return sme::Value::Integer(value_);
         }
-        return HostObject::get(engine, name);
+        throw sme::RError("unknown property '" + std::string(name) + "'");
     }
 
-    void set(sme::Engine& engine, std::string_view name, const sme::Value& incoming) override {
+    void SetProperty(sme::Engine&, std::string_view name, const sme::Value& incoming) override {
         if (name == "value") {
             value_ = std::get<int>(incoming);
             return;
         }
-        HostObject::set(engine, name, incoming);
+        throw sme::RError("unknown property '" + std::string(name) + "'");
     }
 
-    sme::Value call(sme::Engine& engine, std::string_view name, std::span<const sme::Value> args) override {
+    sme::Value Call(sme::Engine&, std::string_view name, std::span<const sme::Value> args) override {
         if (name == "add") {
             if (args.size() != 1) {
 				return {};
@@ -35,7 +36,7 @@ public:
             value_ += std::get<int>(args[0]);
             return sme::Value::Integer(value_);
         }
-        return HostObject::call(engine, name, args);
+        throw sme::RError("unknown method '" + std::string(name) + "'");
     }
 
 private:

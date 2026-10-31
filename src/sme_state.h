@@ -1,7 +1,7 @@
 #pragma once
 
 #include "sme/sme_engine.h"
-#include "sme/sme_host.h"
+#include "sme/sme_object.h"
 #include "sme/sme_value.h"
 
 #include <cstdint>
@@ -18,7 +18,7 @@ namespace sme {
 // Внутреннее состояние движка: байткод и кадры.
 // Публичный API — Engine. Сюда смотрят компилятор и интерпретатор.
 
-using Factory = std::function<std::shared_ptr<HostObject>()>;
+using Factory = std::function<std::shared_ptr<IScriptObject>()>;
 
 // Константа байткода. Строка здесь ещё текст: LoadConst копирует её в Value.
 using Constant = std::variant<std::monostate, int, float, bool, std::string, std::nullptr_t>;

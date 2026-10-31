@@ -1,5 +1,6 @@
 #include "sme/sme_engine.h"
-#include "sme/sme_host.h"
+#include "sme/sme_error.h"
+#include "sme/sme_object.h"
 #include "sme/smelib_default.h"
 #include "sme/smelib_gs.h"
 #include "sme/smelib_math.h"
@@ -73,23 +74,21 @@ Result run(const char* file, const char* function) {
     return result;
 }
 
-class TStruct : public sme::HostObject {
+class TStruct : public sme::IScriptObject {
 public:
     static int alive;
-    static int released;
 
     TStruct() { ++alive; }
     ~TStruct() override { --alive; }
-    void release() override { ++released; }
 
-    sme::Value get(sme::Engine& engine, std::string_view name) override {
+    sme::Value GetProperty(sme::Engine&, std::string_view name) const override {
         if (name == "test_int") return sme::Value::Integer(testInt_);
         if (name == "test_str") return sme::Value::String(testStr_);
         if (name == "test_out") return sme::Value::String(testOut_);
-        return HostObject::get(engine, name);
+        throw sme::RError("unknown property '" + std::string(name) + "'");
     }
 
-    void set(sme::Engine& engine, std::string_view name, const sme::Value& value) override {
+    void SetProperty(sme::Engine&, std::string_view name, const sme::Value& value) override {
         if (name == "test_int" && value.IsInteger()) {
             testInt_ = std::get<int>(value);
             return;
@@ -100,10 +99,10 @@ public:
             else testOut_ = std::move(text);
             return;
         }
-        HostObject::set(engine, name, value);
+        throw sme::RError("unknown property '" + std::string(name) + "'");
     }
 
-    sme::Value call(sme::Engine& engine, std::string_view name, std::span<const sme::Value> args) override {
+    sme::Value Call(sme::Engine&, std::string_view name, std::span<const sme::Value> args) override {
         if (name == "run") {
             testOut_ = testStr_ + std::to_string(testInt_);
             return sme::Value::Null();
@@ -114,7 +113,7 @@ public:
         if (name == "add" && args.size() == 2 && args[0].IsInteger() && args[1].IsInteger()) {
             return sme::Value::Integer(std::get<int>(args[0]) + std::get<int>(args[1]));
         }
-        return HostObject::call(engine, name, args);
+        throw sme::RError("unknown method '" + std::string(name) + "'");
     }
 
 private:
@@ -124,7 +123,6 @@ private:
 };
 
 int TStruct::alive = 0;
-int TStruct::released = 0;
 
 }  // анонимное пространство имён
 
@@ -1098,43 +1096,42 @@ TEST(Regression, PreviousBug3)
     EXPECT_FLOAT_EQ(script.floating(), 3.14f);
 }
 
-TEST(ScriptObject, test_Prop)
+TEST(IScriptObject, test_Prop)
 {
     TStruct::alive = 0;
-    TStruct::released = 0;
     sme::Engine engine;
 	sme::library::InstallDefault(engine);
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
-    engine.addFactory("TStruct", [] { return std::make_shared<TStruct>(); });
+    engine.RegisterFactory("TStruct", [] { return std::make_shared<TStruct>(); });
     engine.load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = engine.call("test_Prop");
     EXPECT_EQ(TStruct::alive, 0);
     EXPECT_EQ(value.CastString(), "hello world42");
 }
 
-TEST(ScriptObject, test_PropCall)
+TEST(IScriptObject, test_PropCall)
 {
     TStruct::alive = 0;
     sme::Engine engine;
 	sme::library::InstallDefault(engine);
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
-    engine.addFactory("TStruct", [] { return std::make_shared<TStruct>(); });
+    engine.RegisterFactory("TStruct", [] { return std::make_shared<TStruct>(); });
     engine.load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = engine.call("test_PropCall");
     EXPECT_EQ(TStruct::alive, 0);
     EXPECT_EQ(value.CastString(), "7 items");
 }
 
-TEST(ScriptObject, test_PropAdd)
+TEST(IScriptObject, test_PropAdd)
 {
     TStruct::alive = 0;
     sme::Engine engine;
 	sme::library::InstallDefault(engine);
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
-    engine.addFactory("TStruct", [] { return std::make_shared<TStruct>(); });
+    engine.RegisterFactory("TStruct", [] { return std::make_shared<TStruct>(); });
     engine.load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = engine.call("test_PropAdd");
     ASSERT_TRUE(value.IsInteger());
@@ -1142,16 +1139,15 @@ TEST(ScriptObject, test_PropAdd)
     EXPECT_EQ(std::get<int>(value), 43);
 }
 
-TEST(ScriptObject, test_PropRelease)
+TEST(IScriptObject, test_PropSharedLifetime)
 {
     TStruct::alive = 0;
-    TStruct::released = 0;
     std::shared_ptr<TStruct> kept;
     sme::Engine engine;
 	sme::library::InstallDefault(engine);
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
-    engine.addFactory("TStruct", [&kept] {
+    engine.RegisterFactory("TStruct", [&kept] {
         kept = std::make_shared<TStruct>();
         return kept;
     });
@@ -1159,7 +1155,6 @@ TEST(ScriptObject, test_PropRelease)
     sme::Value value = engine.call("test_PropRelease");
     ASSERT_TRUE(value.IsInteger());
     EXPECT_EQ(std::get<int>(value), 0);
-    EXPECT_EQ(TStruct::released, 0);
     EXPECT_EQ(TStruct::alive, 1);
     kept.reset();
     EXPECT_EQ(TStruct::alive, 0);
@@ -1277,14 +1272,14 @@ TEST(ValueOwnership, TablesAndSharedValuesAreAccessibleDirectly)
     EXPECT_EQ(std::get<int>(*std::get<sme::SharedValue>(linkedCopy)), 11);
 }
 
-TEST(ScriptObject, test_PropCompound)
+TEST(IScriptObject, test_PropCompound)
 {
     TStruct::alive = 0;
     sme::Engine engine;
 	sme::library::InstallDefault(engine);
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
-    engine.addFactory("TStruct", [] { return std::make_shared<TStruct>(); });
+    engine.RegisterFactory("TStruct", [] { return std::make_shared<TStruct>(); });
     engine.load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = engine.call("test_PropCompound");
     EXPECT_EQ(TStruct::alive, 0);
@@ -1662,7 +1657,7 @@ TEST(Performance, WorkloadSpeed)
 	sme::library::InstallDefault(engine);
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
-    engine.addFactory("TStruct", [] { return std::make_shared<TStruct>(); });
+    engine.RegisterFactory("TStruct", [] { return std::make_shared<TStruct>(); });
     engine.load(scriptPath("ver2/test_performance.gs"));
 
     constexpr int kRepeats = 5;

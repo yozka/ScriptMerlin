@@ -2,7 +2,7 @@
 
 #include "sme/sme_error.h"
 #include "sme/sme_filesystem.h"
-#include "sme/sme_host.h"
+#include "sme/sme_object.h"
 #include "sme/sme_logging.h"
 #include "sme/sme_value.h"
 
@@ -54,10 +54,10 @@ namespace sme
 		void RegisterNative(std::string name, NativeFn function);
 		
 		// newobj<Имя>() в скрипте ищет фабрику, зарегистрированную здесь.
-		void addFactory(std::string name, std::function<std::shared_ptr<HostObject>()> factory);
+		void RegisterFactory(std::string name, std::function<std::shared_ptr<IScriptObject>()> factory);
 		
 		// Глобал с этим именем начинает указывать на объект хоста.
-		void bind(std::string name, std::shared_ptr<HostObject> object);
+		void bind(std::string name, std::shared_ptr<IScriptObject> object);
 		
 		
 	public:

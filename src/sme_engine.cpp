@@ -63,7 +63,7 @@ void Engine::RegisterNative(std::string name, NativeFn function)
 }
 
 
-void Engine::bind(std::string name, std::shared_ptr<HostObject> object) {
+void Engine::bind(std::string name, std::shared_ptr<IScriptObject> object) {
     if (!object) {
         throw RError("bind expects an object");
     }
@@ -224,7 +224,7 @@ std::optional<size_t> Engine::functionScope(std::string_view name) const {
     return std::nullopt;
 }
 
-void Engine::addFactory(std::string name, std::function<std::shared_ptr<HostObject>()> factory) {
+void Engine::RegisterFactory(std::string name, std::function<std::shared_ptr<IScriptObject>()> factory) {
     if (!factory) {
         throw RError("factory '" + name + "' is empty");
     }
