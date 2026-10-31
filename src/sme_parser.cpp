@@ -31,7 +31,7 @@ public:
             if (match(Token::Kind::Semicolon)) {
                 continue;
             }
-            if (check(Token::Kind::KwFn) || check(Token::Kind::KwFunc)) {
+            if (check(Token::Kind::KwFunc)) {
                 if (forwardDeclaration()) {
                     continue;
                 }
@@ -172,11 +172,11 @@ private:
     }
 
     Function parseFunction() {
-        Token fn = tokens_[pos_++];
+        Token functionToken = tokens_[pos_++];
         Token name = consume(Token::Kind::Identifier, "function name");
         consume(Token::Kind::LParen, "'('");
         Function function;
-        function.line = fn.line;
+        function.line = functionToken.line;
         function.name = name.text;
         if (!check(Token::Kind::RParen)) {
             do {
@@ -825,7 +825,6 @@ private:
         case Token::Kind::CaretEq: return "'^='";
         case Token::Kind::ShlEq: return "'<<='";
         case Token::Kind::ShrEq: return "'>>='";
-        case Token::Kind::KwFn: return "'fn'";
         case Token::Kind::KwFunc: return "'func'";
         case Token::Kind::KwVar: return "'var'";
         case Token::Kind::KwIf: return "'if'";

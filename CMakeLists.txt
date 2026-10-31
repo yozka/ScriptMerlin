@@ -23,6 +23,11 @@ if(NOT SME_MAX_CALL_DEPTH MATCHES "^[1-9][0-9]*$")
     message(FATAL_ERROR "SME_MAX_CALL_DEPTH must be a positive integer")
 endif()
 
+set(SME_MAX_RECURSION_DEPTH 256 CACHE STRING "Maximum script recursion depth")
+if(NOT SME_MAX_RECURSION_DEPTH MATCHES "^[1-9][0-9]*$")
+    message(FATAL_ERROR "SME_MAX_RECURSION_DEPTH must be a positive integer")
+endif()
+
 set(mln_headers
     ${CMAKE_CURRENT_SOURCE_DIR}/include/sme/sme.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/sme/sme_engine.h
@@ -73,7 +78,10 @@ target_include_directories(ScriptMerlin
 )
 
 target_compile_features(ScriptMerlin PUBLIC cxx_std_20)
-target_compile_definitions(ScriptMerlin PRIVATE SME_MAX_CALL_DEPTH=${SME_MAX_CALL_DEPTH})
+target_compile_definitions(ScriptMerlin PRIVATE
+    SME_MAX_CALL_DEPTH=${SME_MAX_CALL_DEPTH}
+    SME_MAX_RECURSION_DEPTH=${SME_MAX_RECURSION_DEPTH}
+)
 if(SME_ENABLE_ASSERTS STREQUAL "ON")
     target_compile_definitions(ScriptMerlin PRIVATE SME_ENABLE_ASSERTS=1)
 elseif(SME_ENABLE_ASSERTS STREQUAL "OFF")

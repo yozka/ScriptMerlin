@@ -546,15 +546,12 @@ std::optional<Value> Machine::execute() {
         if (active.frames.empty()) {
             throw RError("call stack underflow");
         }
-        if (active.frames.size() > 256) {
-            throw RError("script recursion is too deep");
-        }
         Frame& frame = active.frames.back();
         const Chunk& chunk = state_.functions[frame.function];
         if (frame.ip >= chunk.code.size()) {
             throw RError("function '" + chunk.name + "' ran out of instructions");
         }
-        const Instruction ins = chunk.code[frame.ip];
+        const Instruction& ins = chunk.code[frame.ip];
 
         auto bump = [&] { frame.ip++; };
         auto write = [&](uint16_t slot, Value value) { frame.regs[slot] = std::move(value); };
@@ -649,6 +646,91 @@ std::optional<Value> Machine::execute() {
             }
             break;
         }
+        case Op::JumpIfCmpFalse: {
+            const Value& lhs = fastReg(frame, ins.a);
+            const Value& rhs = fastReg(frame, ins.b);
+            const Op op = static_cast<Op>(ins.c);
+            bool result = false;
+            if (const auto* left = std::get_if<int>(&lhs); left) {
+                if (const auto* right = std::get_if<int>(&rhs); right) {
+                    if (op == Op::CmpEq) result = *left == *right;
+                    else if (op == Op::CmpNe) result = *left != *right;
+                    else if (op == Op::CmpLt) result = *left < *right;
+                    else if (op == Op::CmpLe) result = *left <= *right;
+                    else if (op == Op::CmpGt) result = *left > *right;
+                    else if (op == Op::CmpGe) result = *left >= *right;
+                    else throw RError("internal operator fault", ins.line);
+                } else if (op == Op::CmpEq) {
+                    result = equals(lhs, rhs);
+                } else if (op == Op::CmpNe) {
+                    result = !equals(lhs, rhs);
+                } else {
+                    const auto leftNumber = lhs.AsNumber();
+                    const auto rightNumber = rhs.AsNumber();
+                    if (!leftNumber || !rightNumber) throw RError("comparison expects numbers", ins.line);
+                    if (!std::isnan(*leftNumber) && !std::isnan(*rightNumber)) {
+                        if (op == Op::CmpLt) result = *leftNumber < *rightNumber;
+                        else if (op == Op::CmpLe) result = *leftNumber <= *rightNumber;
+                        else if (op == Op::CmpGt) result = *leftNumber > *rightNumber;
+                        else if (op == Op::CmpGe) result = *leftNumber >= *rightNumber;
+                        else throw RError("internal operator fault", ins.line);
+                    }
+                }
+            } else if (op == Op::CmpEq) {
+                result = equals(lhs, rhs);
+            } else if (op == Op::CmpNe) {
+                result = !equals(lhs, rhs);
+            } else {
+                const auto left = lhs.AsNumber();
+                const auto right = rhs.AsNumber();
+                if (!left || !right) throw RError("comparison expects numbers", ins.line);
+                if (!std::isnan(*left) && !std::isnan(*right)) {
+                    if (op == Op::CmpLt) result = *left < *right;
+                    else if (op == Op::CmpLe) result = *left <= *right;
+                    else if (op == Op::CmpGt) result = *left > *right;
+                    else if (op == Op::CmpGe) result = *left >= *right;
+                    else throw RError("internal operator fault", ins.line);
+                }
+            }
+            if (!result) frame.ip = ins.e;
+            else bump();
+            break;
+        }
+        case Op::JumpIfCmpImmFalse: {
+            const Value& lhs = fastReg(frame, ins.a);
+            const Op op = static_cast<Op>(ins.c);
+            const int immediate = static_cast<int16_t>(ins.d);
+            bool result = false;
+            if (const auto* integer = std::get_if<int>(&lhs)) {
+                if (op == Op::CmpEq) result = *integer == immediate;
+                else if (op == Op::CmpNe) result = *integer != immediate;
+                else if (op == Op::CmpLt) result = *integer < immediate;
+                else if (op == Op::CmpLe) result = *integer <= immediate;
+                else if (op == Op::CmpGt) result = *integer > immediate;
+                else if (op == Op::CmpGe) result = *integer >= immediate;
+                else throw RError("internal operator fault", ins.line);
+            } else if (op == Op::CmpEq || op == Op::CmpNe) {
+                bool equal = false;
+                if (const auto number = lhs.AsNumber()) {
+                    equal = *number == static_cast<float>(immediate);
+                }
+                result = op == Op::CmpEq ? equal : !equal;
+            } else {
+                const auto left = lhs.AsNumber();
+                if (!left) throw RError("comparison expects numbers", ins.line);
+                const float right = static_cast<float>(immediate);
+                if (!std::isnan(*left)) {
+                    if (op == Op::CmpLt) result = *left < right;
+                    else if (op == Op::CmpLe) result = *left <= right;
+                    else if (op == Op::CmpGt) result = *left > right;
+                    else if (op == Op::CmpGe) result = *left >= right;
+                    else throw RError("internal operator fault", ins.line);
+                }
+            }
+            if (!result) frame.ip = ins.e;
+            else bump();
+            break;
+        }
         case Op::JumpIfNotLe: {
             const Value& lhs = fastReg(frame, ins.a);
             const Value& rhs = fastReg(frame, ins.b);
@@ -727,6 +809,9 @@ std::optional<Value> Machine::execute() {
                 next.regs[i] = args[i];
             }
             state_.runStack.back().frames.push_back(std::move(next));
+            if (state_.runStack.back().frames.size() > SME_MAX_RECURSION_DEPTH) {
+                throw RError("script recursion is too deep");
+            }
             break;
         }
         case Op::Return: {
@@ -1001,6 +1086,9 @@ std::optional<Value> Machine::execute() {
                     next.regs[i] = args[i];
                 }
                 state_.runStack.back().frames.push_back(std::move(next));
+                if (state_.runStack.back().frames.size() > SME_MAX_RECURSION_DEPTH) {
+                    throw RError("script recursion is too deep");
+                }
                 break;
             }
             auto native = std::find(state_.nativeNames.begin(), state_.nativeNames.end(), name);

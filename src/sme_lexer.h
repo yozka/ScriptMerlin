@@ -27,7 +27,7 @@ struct Token {
         AndAnd, OrOr, Bang, Tilde,
         Amp, Pipe, Caret, Shl, Shr,
         AmpEq, PipeEq, CaretEq, ShlEq, ShrEq,
-        KwFn, KwFunc, KwVar, KwIf, KwElse, KwWhile, KwFor, KwDo,
+        KwFunc, KwVar, KwIf, KwElse, KwWhile, KwFor, KwDo,
         KwReturn, KwBreak, KwContinue, KwGoto, KwStop,
         KwTrue, KwFalse, KwNull, KwPointer, KwAnd, KwOr, KwNot,
         KwInt, KwFloat, KwStr, KwVoid, KwBreakpoint

@@ -370,15 +370,44 @@ private:
         const Expr& valueExpr = *expr.kids[1];
         if (target.kind == Expr::Kind::Name) {
             const auto local = locals_.find(target.text);
-            if (local != locals_.end() && valueExpr.kind == Expr::Kind::Binary &&
-                valueExpr.binary != BinaryOp::And && valueExpr.binary != BinaryOp::Or) {
-                const Expr& right = *valueExpr.kids[1];
-                if (right.kind == Expr::Kind::Int && right.intValue >= -32768 && right.intValue <= 32767) {
+            if (local != locals_.end()) {
+                const uint16_t dest = local->second;
+                if (valueExpr.kind == Expr::Kind::Binary) {
                     const uint16_t lhs = compileExpr(*valueExpr.kids[0]);
-                    emit(Op::BinaryImm, local->second, lhs,
-                         static_cast<uint16_t>(binaryOp(valueExpr.binary)),
-                         static_cast<uint16_t>(static_cast<int16_t>(right.intValue)), 0, expr.line);
-                    return local->second;
+                    const Expr& right = *valueExpr.kids[1];
+                    if (valueExpr.binary == BinaryOp::And || valueExpr.binary == BinaryOp::Or) {
+                        const uint16_t rhs = compileExpr(right);
+                        const Op op = valueExpr.binary == BinaryOp::And ? Op::LogicAnd : Op::LogicOr;
+                        emit(op, dest, lhs, rhs, 0, 0, expr.line);
+                    } else if (right.kind == Expr::Kind::Int &&
+                        right.intValue >= -32768 && right.intValue <= 32767) {
+                        emit(Op::BinaryImm, dest, lhs,
+                             static_cast<uint16_t>(binaryOp(valueExpr.binary)),
+                             static_cast<uint16_t>(static_cast<int16_t>(right.intValue)), 0, expr.line);
+                    } else {
+                        const uint16_t rhs = compileExpr(right);
+                        emit(binaryOp(valueExpr.binary), dest, lhs, rhs, 0, 0, expr.line);
+                    }
+                    return dest;
+                }
+                if (valueExpr.kind == Expr::Kind::Unary) {
+                    const uint16_t value = compileExpr(*valueExpr.kids[0]);
+                    Op op = Op::Not;
+                    if (valueExpr.unary == UnaryOp::Neg) op = Op::Neg;
+                    else if (valueExpr.unary == UnaryOp::BitNot) op = Op::BitNot;
+                    emit(op, dest, value, 0, 0, 0, expr.line);
+                    return dest;
+                }
+                if (valueExpr.kind == Expr::Kind::Cast) {
+                    const uint16_t value = compileExpr(*valueExpr.kids[0]);
+                    uint16_t kind = 2;
+                    if (valueExpr.text == "int") kind = 0;
+                    else if (valueExpr.text == "float") kind = 1;
+                    const uint16_t format = valueExpr.format.empty()
+                        ? static_cast<uint16_t>(65535)
+                        : addConst(valueExpr.format);
+                    emit(Op::Cast, dest, value, kind, format, 0, expr.line);
+                    return dest;
                 }
             }
         }
@@ -523,16 +552,45 @@ private:
 
     uint16_t compileTernary(const Expr& expr) {
         uint16_t dest = allocTemp();
-        uint16_t cond = compileExpr(*expr.kids[0]);
-        uint16_t jumpFalse = emit(Op::JumpIfFalse, cond, 0, 0, 0, 0, expr.line);
+        const uint16_t jumpFalse = compileConditionJumpFalse(*expr.kids[0], expr.line);
         uint16_t yes = compileExpr(*expr.kids[1]);
         emit(Op::Copy, dest, yes, 0, 0, 0, expr.line);
         uint16_t jumpEnd = emit(Op::Jump, 0, 0, 0, 0, 0, expr.line);
-        code_[jumpFalse].b = here();
+        patchConditionJump(jumpFalse, here());
         uint16_t no = compileExpr(*expr.kids[2]);
         emit(Op::Copy, dest, no, 0, 0, 0, expr.line);
         code_[jumpEnd].a = here();
         return dest;
+    }
+
+    uint16_t compileConditionJumpFalse(const Expr& expr, int line) {
+        if (expr.kind == Expr::Kind::Binary &&
+            expr.binary != BinaryOp::And && expr.binary != BinaryOp::Or) {
+            const Op op = binaryOp(expr.binary);
+            if (op == Op::CmpEq || op == Op::CmpNe || op == Op::CmpLt ||
+                op == Op::CmpLe || op == Op::CmpGt || op == Op::CmpGe) {
+                const uint16_t lhs = compileExpr(*expr.kids[0]);
+                const Expr& right = *expr.kids[1];
+                if (right.kind == Expr::Kind::Int &&
+                    right.intValue >= -32768 && right.intValue <= 32767) {
+                    return emit(Op::JumpIfCmpImmFalse, lhs, 0,
+                                static_cast<uint16_t>(op),
+                                static_cast<uint16_t>(static_cast<int16_t>(right.intValue)),
+                                0, line);
+                }
+                const uint16_t rhs = compileExpr(right);
+                return emit(Op::JumpIfCmpFalse, lhs, rhs, static_cast<uint16_t>(op), 0, 0, line);
+            }
+        }
+        const uint16_t cond = compileExpr(expr);
+        return emit(Op::JumpIfFalse, cond, 0, 0, 0, 0, line);
+    }
+
+    void patchConditionJump(uint16_t jump, uint16_t target) {
+        if (code_[jump].op == Op::JumpIfCmpFalse || code_[jump].op == Op::JumpIfCmpImmFalse) {
+            code_[jump].e = target;
+        }
+        else code_[jump].b = target;
     }
 
     uint16_t compileCast(const Expr& expr) {
@@ -678,24 +736,22 @@ private:
     }
 
     void compileIf(const Stmt& stmt) {
-        uint16_t cond = compileExpr(*stmt.expr);
-        uint16_t jumpFalse = emit(Op::JumpIfFalse, cond, 0, 0, 0, 0, stmt.line);
+        const uint16_t jumpFalse = compileConditionJumpFalse(*stmt.expr, stmt.line);
         compileBody(stmt.body);
         if (stmt.hasElse) {
             uint16_t jumpEnd = emit(Op::Jump, 0, 0, 0, 0, 0, stmt.line);
-            code_[jumpFalse].b = here();
+            patchConditionJump(jumpFalse, here());
             compileBody(stmt.elseBody);
             code_[jumpEnd].a = here();
         } else {
-            code_[jumpFalse].b = here();
+            patchConditionJump(jumpFalse, here());
         }
     }
 
     void compileWhile(const Stmt& stmt) {
         uint16_t start = here();
         loops_.push_back(Loop{});
-        uint16_t cond = compileExpr(*stmt.expr);
-        uint16_t jumpFalse = emit(Op::JumpIfFalse, cond, 0, 0, 0, 0, stmt.line);
+        const uint16_t jumpFalse = compileConditionJumpFalse(*stmt.expr, stmt.line);
         compileBody(stmt.body);
         uint16_t step = here();
         for (uint16_t jump : loops_.back().continues) {
@@ -703,7 +759,7 @@ private:
         }
         emit(Op::Jump, start, 0, 0, 0, 0, stmt.line);
         uint16_t end = here();
-        code_[jumpFalse].b = end;
+        patchConditionJump(jumpFalse, end);
         for (uint16_t jump : loops_.back().breaks) {
             code_[jump].a = end;
         }
@@ -783,8 +839,7 @@ private:
         uint16_t jumpFalse = 0;
         bool hasCond = stmt.expr2 != nullptr;
         if (hasCond) {
-            uint16_t cond = compileExpr(*stmt.expr2);
-            jumpFalse = emit(Op::JumpIfFalse, cond, 0, 0, 0, 0, stmt.line);
+            jumpFalse = compileConditionJumpFalse(*stmt.expr2, stmt.line);
         }
         loops_.push_back(Loop{});
         compileBody(stmt.body);
@@ -798,7 +853,7 @@ private:
         emit(Op::Jump, start, 0, 0, 0, 0, stmt.line);
         uint16_t end = here();
         if (hasCond) {
-            code_[jumpFalse].b = end;
+            patchConditionJump(jumpFalse, end);
         }
         for (uint16_t jump : loops_.back().breaks) {
             code_[jump].a = end;

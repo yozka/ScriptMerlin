@@ -182,6 +182,26 @@ TEST(Logic, OR)
     EXPECT_EQ(script.boolean(), true);
 }
 
+TEST(Logic, FusedComparisonKeepsIntegerPrecision)
+{
+    sme::Engine engine;
+    engine.loadSource(
+        "func compare_large_integers() {\n"
+        "    a = 16777217;\n"
+        "    b = 16777216;\n"
+        "    if (a > b) return 1;\n"
+        "    return 0;\n"
+        "}\n");
+    EXPECT_EQ(std::get<int>(engine.call("compare_large_integers")), 1);
+}
+
+TEST(Parser, FnIsNotFunctionKeyword)
+{
+    sme::Engine engine;
+    EXPECT_THROW(engine.loadSource("fn old_function() { return 1; }"), sme::RError);
+    EXPECT_NO_THROW(engine.loadSource("func new_function() { return 1; }"));
+}
+
 TEST(ArithmeticOperator, SIGN_Float)
 {
     Result script = run("ver2/test_script.gs", "test_ArithmeticOperatorSIGN_Float");
@@ -1038,9 +1058,9 @@ TEST(EdgeCases, IntegerArithmeticOverflow)
 {
     sme::Engine engine;
     engine.loadSource(R"(
-        fn add_overflow() { return 2147483647 + 1; }
-        fn sub_overflow() { return -2147483647 - 2; }
-        fn mul_overflow() { return 1073741824 * 2; }
+        func add_overflow() { return 2147483647 + 1; }
+        func sub_overflow() { return -2147483647 - 2; }
+        func mul_overflow() { return 1073741824 * 2; }
     )");
 
     EXPECT_THROW(engine.call("add_overflow"), sme::RError);
@@ -1186,16 +1206,16 @@ TEST(ValueOwnership, ValuesOutliveEngineAndCalls)
     {
         sme::Engine engine;
         engine.loadSource(R"(
-            fn text() { return "a string that exceeds inline storage"; }
-            fn table() { return [1, 2, 3]; }
-            fn other() { return 42; }
-            fn copy_string() {
+            func text() { return "a string that exceeds inline storage"; }
+            func table() { return [1, 2, 3]; }
+            func other() { return 42; }
+            func copy_string() {
                 var original = "long enough";
                 var copy = original;
                 copy[[0]] = 'X';
                 return original + ":" + copy;
             }
-            fn reference_string() {
+            func reference_string() {
                 var text = "original string";
                 var ref = &text;
                 *ref = "updated string";
@@ -1226,7 +1246,7 @@ TEST(ValueOwnership, CyclicTableOwnershipIsRejected)
 {
     sme::Engine engine;
     engine.loadSource(R"(
-        fn cycle() {
+        func cycle() {
             var table = [0];
             table[0] = table;
             return table;

@@ -53,6 +53,8 @@ enum class Op : uint8_t {
     Jump,         // ip = a
     JumpIfFalse,  // если r[a] ложно, ip = b
     JumpIfTrue,
+    JumpIfCmpFalse, // если r[a] <op> r[b] ложно, ip = e; <op> в c
+    JumpIfCmpImmFalse, // сравнение r[a] с int16(d), переход в e если ложно
     JumpIfNotLe,  // если r[a] <= r[b] ложно, ip = c
     IncJumpLe,    // r[a] += 1; если r[a] <= r[b], ip = c
     Call,         // r[a] = функция[b](r[c] .. count d); лишние аргументы отбрасываются, нехватка остаётся null

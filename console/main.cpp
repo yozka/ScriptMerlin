@@ -51,7 +51,7 @@ int main() {
 	sme::library::InstallGS(engine);
     engine.bind("counter", std::make_shared<Counter>());
     engine.loadSource(R"mln(
-fn main() {
+func main() {
     counter.value = 10;
     counter.add(32);
     return counter.value + abs(-1);

@@ -33,6 +33,13 @@ cmake --build build
 
 Юнит-тесты используют GoogleTest, который CMake загружает при включённой опции `SME_TEST`.
 
+Максимальную глубину рекурсии скриптов можно настроить через `SME_MAX_RECURSION_DEPTH`
+(по умолчанию `256`):
+
+```sh
+cmake -S . -B build -DSME_MAX_RECURSION_DEPTH=128
+```
+
 ## Быстрый старт
 
 ```cpp
@@ -58,7 +65,7 @@ int main()
     });
 
     engine.loadSource(R"(
-        fn main() {
+        func main() {
             return add(20, 22);
         }
     )");

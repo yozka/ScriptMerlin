@@ -20,7 +20,6 @@ namespace {
 // Ключевые слова. tab/ref/ptr намеренно не здесь: tab(...) — вызов функции,
 // а не объявление. int/float/str остаются словами и отдельно распознаются как вызов.
 const std::unordered_map<std::string, Token::Kind> kKeywords = {
-    {"fn", Token::Kind::KwFn},
     {"func", Token::Kind::KwFunc},
     {"var", Token::Kind::KwVar},
     {"if", Token::Kind::KwIf},
