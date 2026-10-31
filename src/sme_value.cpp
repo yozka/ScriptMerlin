@@ -1,5 +1,5 @@
 #include "sme/sme_value.h"
-#include "sme/sme_error.h"
+#include "sme_assert.h"
 
 #include <algorithm>
 #include <sstream>
@@ -207,7 +207,8 @@ namespace sme
 	size_t Value::Length() const {
 		if (IsString()) return ToString().size();
 		if (IsTable()) return std::get<TableHandle>(*this)->size();
-		throw RError("len expects a string or a table");
+		SME_ASSERT_FAIL("len expects a string or a table");
+		return 0;
 	}
 
 

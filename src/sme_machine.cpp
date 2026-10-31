@@ -1,5 +1,6 @@
 #include "sme_machine.h"
 
+#include "sme_assert.h"
 #include "sme/sme_error.h"
 
 // Интерпретатор. execute крутит верхний кадр верхнего RunState, пока
@@ -7,7 +8,6 @@
 // RunGuard в run/resume снимает тот RunState, который этот вход положил.
 
 #include <algorithm>
-#include <cassert>
 #include <cmath>
 #include <cstdio>
 #include <sstream>
@@ -21,7 +21,7 @@ namespace sme {
 namespace {
 
 inline Value& fastReg(Frame& frame, size_t index) {
-    assert(index < frame.regs.size());
+    SME_ASSERT(index < frame.regs.size());
     return frame.regs[index];
 }
 

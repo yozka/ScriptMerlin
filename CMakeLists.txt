@@ -11,6 +11,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(SME_EXAMPLE "Пример использования" ON)
 option(SME_TEST "Юнит-тесты" ON)
+set(SME_ENABLE_ASSERTS "AUTO" CACHE STRING "Enable internal assertions (AUTO, ON, or OFF)")
+set_property(CACHE SME_ENABLE_ASSERTS PROPERTY STRINGS AUTO ON OFF)
+string(TOUPPER "${SME_ENABLE_ASSERTS}" SME_ENABLE_ASSERTS)
+if(NOT SME_ENABLE_ASSERTS MATCHES "^(AUTO|ON|OFF)$")
+    message(FATAL_ERROR "SME_ENABLE_ASSERTS must be AUTO, ON, or OFF")
+endif()
+
 set(SME_MAX_CALL_DEPTH 64 CACHE STRING "Maximum nested script call depth")
 if(NOT SME_MAX_CALL_DEPTH MATCHES "^[1-9][0-9]*$")
     message(FATAL_ERROR "SME_MAX_CALL_DEPTH must be a positive integer")
@@ -51,6 +58,7 @@ set(mln_sources
     ${CMAKE_CURRENT_SOURCE_DIR}/src/sme_preprocess.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/sme_state.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/smelib_filesystem.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/sme_assert.h
 )
 
 add_library(ScriptMerlin ${mln_sources} ${mln_headers})
@@ -66,6 +74,16 @@ target_include_directories(ScriptMerlin
 
 target_compile_features(ScriptMerlin PUBLIC cxx_std_20)
 target_compile_definitions(ScriptMerlin PRIVATE SME_MAX_CALL_DEPTH=${SME_MAX_CALL_DEPTH})
+if(SME_ENABLE_ASSERTS STREQUAL "ON")
+    target_compile_definitions(ScriptMerlin PRIVATE SME_ENABLE_ASSERTS=1)
+elseif(SME_ENABLE_ASSERTS STREQUAL "OFF")
+    target_compile_definitions(ScriptMerlin PRIVATE SME_ENABLE_ASSERTS=0)
+else()
+    target_compile_definitions(ScriptMerlin PRIVATE
+        $<$<CONFIG:Debug>:SME_ENABLE_ASSERTS=1>
+        $<$<NOT:$<CONFIG:Debug>>:SME_ENABLE_ASSERTS=0>
+    )
+endif()
 set_target_properties(ScriptMerlin PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     EXPORT_NAME ScriptMerlin

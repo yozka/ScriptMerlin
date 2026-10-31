@@ -1172,7 +1172,11 @@ TEST(Value, AsNumber)
     EXPECT_EQ(sme::Value::Pointer().TypeCode(), 6);
     EXPECT_EQ(sme::Value::Boolean(true).TypeCode(), 1);
     EXPECT_EQ(sme::Value::Shared(sme::Value::Integer(1)).TypeCode(), 0);
-    EXPECT_THROW(sme::Value::Integer(42).Length(), sme::RError);
+#if SME_TEST_ASSERTS_ENABLED
+    EXPECT_DEATH(sme::Value::Integer(42).Length(), "len expects a string or a table");
+#else
+    EXPECT_EQ(sme::Value::Integer(42).Length(), 0u);
+#endif
 }
 
 TEST(ValueOwnership, ValuesOutliveEngineAndCalls)
