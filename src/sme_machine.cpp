@@ -115,7 +115,7 @@ const std::string* stringData(const Value& value) {
 
 Machine::Machine(Engine& engine, State& state) : engine_(engine), state_(state) {}
 
-Value Machine::materialize(Chunk& chunk, size_t constant, int line) {
+Value Machine::materialize(const Chunk& chunk, size_t constant, int line) {
     if (constant >= chunk.constants.size()) {
         throw RError("internal constant fault", line);
     }
@@ -124,15 +124,7 @@ Value Machine::materialize(Chunk& chunk, size_t constant, int line) {
     if (const auto* integer = std::get_if<int>(&value)) return sme::Value::Integer(*integer);
     if (const auto* real = std::get_if<float>(&value)) return sme::Value::Float(*real);
     if (const auto* flag = std::get_if<bool>(&value)) return Value::Boolean(*flag);
-    if (const auto* text = std::get_if<std::string>(&value)) {
-        if (chunk.interned.size() != chunk.constants.size()) {
-            chunk.interned.resize(chunk.constants.size());
-        }
-        Value& cached = chunk.interned[constant];
-        if (!cached.IsNull()) return cached;
-        cached = Value::String(*text);
-        return cached;
-    }
+    if (const auto* text = std::get_if<std::string>(&value)) return Value::String(*text);
     if (std::holds_alternative<std::nullptr_t>(value)) return Value::Pointer();
     throw RError("internal constant fault", line);
 }
@@ -558,7 +550,7 @@ std::optional<Value> Machine::execute() {
             throw RError("script recursion is too deep");
         }
         Frame& frame = active.frames.back();
-        Chunk& chunk = state_.functions[frame.function];
+        const Chunk& chunk = state_.functions[frame.function];
         if (frame.ip >= chunk.code.size()) {
             throw RError("function '" + chunk.name + "' ran out of instructions");
         }

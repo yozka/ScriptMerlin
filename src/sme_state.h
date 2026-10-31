@@ -20,8 +20,7 @@ namespace sme {
 
 using Factory = std::function<std::shared_ptr<HostObject>()>;
 
-// Константа байткода. Строка здесь ещё текст: LoadConst копирует её в Value
-// при первом выполнении и затем использует interned-значение.
+// Константа байткода. Строка здесь ещё текст: LoadConst копирует её в Value.
 using Constant = std::variant<std::monostate, int, float, bool, std::string, std::nullptr_t>;
 
 // Байткод регистровой машины. r[n] — регистр текущего кадра.
@@ -103,8 +102,6 @@ struct Chunk {
     uint16_t registerCount = 0;
     std::vector<Instruction> code;
     std::vector<Constant> constants;
-    // Строковые константы разделяют владельца и живут, пока жив chunk или Value.
-    std::vector<Value> interned;
     size_t scope = 0; // копия #scope файла, одна на все функции загрузки
 };
 
