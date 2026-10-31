@@ -6,7 +6,7 @@
 // Перевод строки значим, поэтому он не схлопывается в пробел.
 // Внутри строки, символа и обратных кавычек комментарий не начинается.
 // Если на границе токена уже был перевод строки, следующий токен откладывается
-// в held_: один next() отдаёт Newline, повторный — сам токен.
+// в _held: один next() отдаёт Newline, повторный — сам токен.
 
 #include <cctype>
 #include <cstdint>
@@ -50,15 +50,15 @@ const std::unordered_map<std::string, Token::Kind> kKeywords = {
 class Lexer {
 public:
     Lexer(std::string_view source, std::string_view name)
-        : source_(source)
-        , name_(name) {}
+        : _source(source)
+        , _name(name) {}
 
     std::vector<Token> run() {
-        if (source_.size() >= 3 &&
-            static_cast<unsigned char>(source_[0]) == 0xEF &&
-            static_cast<unsigned char>(source_[1]) == 0xBB &&
-            static_cast<unsigned char>(source_[2]) == 0xBF) {
-            pos_ = 3; // BOM UTF-8, на токены не влияет
+        if (_source.size() >= 3 &&
+            static_cast<unsigned char>(_source[0]) == 0xEF &&
+            static_cast<unsigned char>(_source[1]) == 0xBB &&
+            static_cast<unsigned char>(_source[2]) == 0xBF) {
+            _pos = 3; // BOM UTF-8, на токены не влияет
         }
         std::vector<Token> tokens;
         while (true) {
@@ -72,29 +72,29 @@ public:
     }
 
 private:
-    std::string_view source_;
-    std::string name_;
-    size_t pos_ = 0;
-    int line_ = 1;
-    bool hasHeld_ = false;
-    Token held_; // токен, отложенный, потому что перед ним стоял перевод строки
+    std::string_view _source;
+    std::string _name;
+    size_t _pos = 0;
+    int _line = 1;
+    bool _hasHeld = false;
+    Token _held; // токен, отложенный, потому что перед ним стоял перевод строки
 
-    bool eof() const { return pos_ >= source_.size(); }
+    bool eof() const { return _pos >= _source.size(); }
 
     char peek(size_t ahead = 0) const {
-        if (pos_ + ahead >= source_.size()) {
+        if (_pos + ahead >= _source.size()) {
             return '\0';
         }
-        return source_[pos_ + ahead];
+        return _source[_pos + ahead];
     }
 
     char get() {
         if (eof()) {
             return '\0';
         }
-        char c = source_[pos_++];
+        char c = _source[_pos++];
         if (c == '\n') {
-            ++line_;
+            ++_line;
         }
         return c;
     }
@@ -112,7 +112,7 @@ private:
             }
             if (c == '\n') {
                 newline = true;
-                newlineLine = line_;
+                newlineLine = _line;
                 get();
                 continue;
             }
@@ -123,7 +123,7 @@ private:
                 continue;
             }
             if (c == '/' && peek(1) == '*') {
-                int start = line_;
+                int start = _line;
                 get();
                 get();
                 bool ateCode = false;
@@ -141,7 +141,7 @@ private:
                     }
                 }
                 if (!closed && ateCode) {
-                    throw RError("unterminated comment in " + name_, start);
+                    throw RError("unterminated comment in " + _name, start);
                 }
                 continue;
             }
@@ -153,7 +153,7 @@ private:
     Token make(Token::Kind kind, std::string text = {}) const {
         Token token;
         token.kind = kind;
-        token.line = line_;
+        token.line = _line;
         token.text = std::move(text);
         return token;
     }
@@ -171,32 +171,32 @@ private:
     }
 
     Token next() {
-        if (hasHeld_) {
-            hasHeld_ = false;
-            return held_;
+        if (_hasHeld) {
+            _hasHeld = false;
+            return _held;
         }
-        int newlineLine = line_;
+        int newlineLine = _line;
         bool sawNewline = skipTrivia(newlineLine);
         if (eof()) {
             Token end = make(Token::Kind::End);
             if (sawNewline) {
-                held_ = end;
-                hasHeld_ = true;
+                _held = end;
+                _hasHeld = true;
                 return newlineToken(newlineLine);
             }
             return end;
         }
         Token token = scanToken();
         if (sawNewline) {
-            held_ = token;
-            hasHeld_ = true;
+            _held = token;
+            _hasHeld = true;
             return newlineToken(newlineLine);
         }
         return token;
     }
 
     Token scanToken() {
-        int line = line_;
+        int line = _line;
         char c = peek();
         if (c == '"') {
             return scanString(line);
@@ -287,7 +287,7 @@ private:
             if (peek() == '|') { get(); return at(line, Token::Kind::OrOr); }
             return eqSuffix(Token::Kind::Pipe, Token::Kind::PipeEq);
         default:
-            throw RError(std::string("unexpected character '") + c + "' in " + name_, line);
+            throw RError(std::string("unexpected character '") + c + "' in " + _name, line);
         }
     }
 
@@ -325,7 +325,7 @@ private:
                 digits.push_back(get());
             }
             if (digits.empty()) {
-                throw RError("hex literal has no digits in " + name_, line);
+                throw RError("hex literal has no digits in " + _name, line);
             }
             uint32_t value = 0;
             for (char digit : digits) {
@@ -334,7 +334,7 @@ private:
                 else if (digit >= 'a' && digit <= 'f') nibble = static_cast<uint32_t>(digit - 'a' + 10);
                 else nibble = static_cast<uint32_t>(digit - 'A' + 10);
                 if (value > (std::numeric_limits<uint32_t>::max() >> 4)) {
-                    throw RError("integer literal out of range in " + name_, line);
+                    throw RError("integer literal out of range in " + _name, line);
                 }
                 value = (value << 4) | nibble;
             }
@@ -350,13 +350,13 @@ private:
             while (peek() == '0' || peek() == '1') {
                 uint32_t bit = get() == '1' ? 1u : 0u;
                 if (value > (std::numeric_limits<uint32_t>::max() >> 1)) {
-                    throw RError("integer literal out of range in " + name_, line);
+                    throw RError("integer literal out of range in " + _name, line);
                 }
                 value = (value << 1) | bit;
                 ++bits;
             }
             if (bits == 0) {
-                throw RError("binary literal has no digits in " + name_, line);
+                throw RError("binary literal has no digits in " + _name, line);
             }
             Token token = at(line, Token::Kind::Int);
             token.intValue = static_cast<int>(value);
@@ -380,7 +380,7 @@ private:
             text.push_back(get());
             if (peek() == '+' || peek() == '-') text.push_back(get());
             if (!std::isdigit(static_cast<unsigned char>(peek()))) {
-                throw RError("exponent has no digits in " + name_, line);
+                throw RError("exponent has no digits in " + _name, line);
             }
             while (std::isdigit(static_cast<unsigned char>(peek()))) {
                 text.push_back(get());
@@ -397,7 +397,7 @@ private:
                     token.intValue = 0;
                     token.text = "2147483648";
                 } else if (value < std::numeric_limits<int>::min() || value > std::numeric_limits<int>::max()) {
-                    throw RError("integer literal out of range in " + name_, line);
+                    throw RError("integer literal out of range in " + _name, line);
                 } else {
                     token.intValue = static_cast<int>(value);
                 }
@@ -405,7 +405,7 @@ private:
         } catch (const RError&) {
             throw;
         } catch (...) {
-            throw RError("numeric literal out of range in " + name_, line);
+            throw RError("numeric literal out of range in " + _name, line);
         }
         return token;
     }
@@ -413,11 +413,11 @@ private:
     Token scanChar(int line) {
         get();
         if (eof() || peek() == '\n') {
-            throw RError("unterminated character in " + name_, line);
+            throw RError("unterminated character in " + _name, line);
         }
         char value = get();
         if (value == '\\') {
-            if (eof()) throw RError("unterminated character in " + name_, line);
+            if (eof()) throw RError("unterminated character in " + _name, line);
             char esc = get();
             switch (esc) {
             case 'n': value = '\n'; break;
@@ -430,7 +430,7 @@ private:
             }
         }
         if (peek() != '\'') {
-            throw RError("unterminated character in " + name_, line);
+            throw RError("unterminated character in " + _name, line);
         }
         get();
         Token token = at(line, Token::Kind::Int);
@@ -444,11 +444,11 @@ private:
         while (!eof() && peek() != quote) {
             char c = get();
             if (c == '\n') {
-                throw RError("unterminated string in " + name_, line);
+                throw RError("unterminated string in " + _name, line);
             }
             if (c == '\\') {
                 if (eof()) {
-                    throw RError("unterminated string in " + name_, line);
+                    throw RError("unterminated string in " + _name, line);
                 }
                 char esc = get();
                 switch (esc) {
@@ -465,7 +465,7 @@ private:
             }
         }
         if (peek() != quote) {
-            throw RError("unterminated string in " + name_, line);
+            throw RError("unterminated string in " + _name, line);
         }
         get();
         Token token = at(line, Token::Kind::String);

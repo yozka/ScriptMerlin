@@ -18,8 +18,8 @@ namespace {
 class Parser {
 public:
     Parser(std::vector<Token> tokens, std::string name)
-        : tokens_(std::move(tokens))
-        , name_(std::move(name)) {}
+        : _tokens(std::move(tokens))
+        , _name(std::move(name)) {}
 
     Program run() {
         Program program;
@@ -42,36 +42,36 @@ public:
                 parseGlobalDecl(program);
                 continue;
             }
-            throw RError("expected a function or declaration in " + name_ + ", got " + spell(peek()), peek().line);
+            throw RError("expected a function or declaration in " + _name + ", got " + spell(peek()), peek().line);
         }
         return program;
     }
 
 private:
-    std::vector<Token> tokens_;
-    std::string name_;
-    size_t pos_ = 0;
+    std::vector<Token> _tokens;
+    std::string _name;
+    size_t _pos = 0;
     // Скобки, внутри которых перевод строки не должен заканчивать оператор.
-    // group_ — круглые и квадратные, braceExpr_ — фигурные в выражении (таблица).
-    int group_ = 0;
-    int braceExpr_ = 0;
+    // _group — круглые и квадратные, _braceExpr — фигурные в выражении (таблица).
+    int _group = 0;
+    int _braceExpr = 0;
 
     const Token& peek() {
-        if (group_ > 0 || braceExpr_ > 0) {
-            while (tokens_[pos_].kind == Token::Kind::Newline) {
-                ++pos_;
+        if (_group > 0 || _braceExpr > 0) {
+            while (_tokens[_pos].kind == Token::Kind::Newline) {
+                ++_pos;
             }
         }
-        return tokens_[pos_];
+        return _tokens[_pos];
     }
 
     bool check(Token::Kind kind) { return peek().kind == kind; }
 
     void account(Token::Kind kind) {
         if (kind == Token::Kind::LParen || kind == Token::Kind::LBracket) {
-            ++group_;
-        } else if ((kind == Token::Kind::RParen || kind == Token::Kind::RBracket) && group_ > 0) {
-            --group_;
+            ++_group;
+        } else if ((kind == Token::Kind::RParen || kind == Token::Kind::RBracket) && _group > 0) {
+            --_group;
         }
     }
 
@@ -80,21 +80,21 @@ private:
             return false;
         }
         account(kind);
-        ++pos_;
+        ++_pos;
         return true;
     }
 
     Token consume(Token::Kind kind, const std::string& what) {
         if (!check(kind)) {
-            throw RError("expected " + what + " in " + name_ + ", got " + spell(peek()), peek().line);
+            throw RError("expected " + what + " in " + _name + ", got " + spell(peek()), peek().line);
         }
         account(kind);
-        return tokens_[pos_++];
+        return _tokens[_pos++];
     }
 
     void skipNewlines() {
         while (check(Token::Kind::Newline)) {
-            ++pos_;
+            ++_pos;
         }
     }
 
@@ -108,7 +108,7 @@ private:
     }
 
     GlobalKind declKind() const {
-        const Token& token = tokens_[pos_];
+        const Token& token = _tokens[_pos];
         if (token.kind == Token::Kind::KwInt) return GlobalKind::Int;
         if (token.kind == Token::Kind::KwFloat) return GlobalKind::Float;
         if (token.kind == Token::Kind::KwStr) return GlobalKind::Str;
@@ -121,14 +121,14 @@ private:
     // func a, b; — разрешение имени до определения. В таблицу функций
     // заглушка не пишется: компилятор и так не требует, чтобы символ уже существовал.
     bool forwardDeclaration() {
-        if (pos_ + 1 >= tokens_.size() || tokens_[pos_ + 1].kind != Token::Kind::Identifier) {
+        if (_pos + 1 >= _tokens.size() || _tokens[_pos + 1].kind != Token::Kind::Identifier) {
             return false;
         }
-        Token::Kind after = pos_ + 2 < tokens_.size() ? tokens_[pos_ + 2].kind : Token::Kind::End;
+        Token::Kind after = _pos + 2 < _tokens.size() ? _tokens[_pos + 2].kind : Token::Kind::End;
         if (after != Token::Kind::Comma && after != Token::Kind::Semicolon && after != Token::Kind::Newline) {
             return false;
         }
-        ++pos_;
+        ++_pos;
         do {
             consume(Token::Kind::Identifier, "function name");
         } while (match(Token::Kind::Comma));
@@ -145,7 +145,7 @@ private:
         if (check(Token::Kind::Newline) || check(Token::Kind::RBrace) || check(Token::Kind::End) || check(Token::Kind::KwElse)) {
             return;
         }
-        throw RError("expected end of statement in " + name_ + ", got " + spell(peek()), peek().line);
+        throw RError("expected end of statement in " + _name + ", got " + spell(peek()), peek().line);
     }
 
     void rememberGlobal(Program& program, const std::string& global, GlobalKind kind) {
@@ -160,7 +160,7 @@ private:
     // int x; на уровне файла. «int x = 1» здесь ошибка: значение глобала задаёт #def.
     void parseGlobalDecl(Program& program) {
         GlobalKind kind = declKind();
-        ++pos_;
+        ++_pos;
         do {
             Token name = consume(Token::Kind::Identifier, "name");
             rememberGlobal(program, name.text, kind);
@@ -172,7 +172,7 @@ private:
     }
 
     Function parseFunction() {
-        Token functionToken = tokens_[pos_++];
+        Token functionToken = _tokens[_pos++];
         Token name = consume(Token::Kind::Identifier, "function name");
         consume(Token::Kind::LParen, "'('");
         Function function;
@@ -200,10 +200,10 @@ private:
             if (match(Token::Kind::Semicolon)) {
                 continue;
             }
-            size_t before = pos_;
+            size_t before = _pos;
             body.push_back(parseStmt());
-            if (pos_ == before) {
-                throw RError("parser did not advance in " + name_, peek().line);
+            if (_pos == before) {
+                throw RError("parser did not advance in " + _name, peek().line);
             }
         }
         consume(Token::Kind::RBrace, "'}'");
@@ -239,14 +239,14 @@ private:
         if (check(Token::Kind::KwFor)) {
             return parseFor();
         }
-        if (check(Token::Kind::Identifier) && pos_ + 1 < tokens_.size() && tokens_[pos_ + 1].kind == Token::Kind::Colon) {
+        if (check(Token::Kind::Identifier) && _pos + 1 < _tokens.size() && _tokens[_pos + 1].kind == Token::Kind::Colon) {
             auto stmt = makeStmt(Stmt::Kind::Label, peek().line);
-            stmt->name = tokens_[pos_++].text;
-            ++pos_;
+            stmt->name = _tokens[_pos++].text;
+            ++_pos;
             return stmt;
         }
         if (isDeclKeyword()) {
-            if (check(Token::Kind::KwVar) && pos_ + 1 < tokens_.size() && tokens_[pos_ + 1].kind == Token::Kind::LParen) {
+            if (check(Token::Kind::KwVar) && _pos + 1 < _tokens.size() && _tokens[_pos + 1].kind == Token::Kind::LParen) {
                 auto stmt = makeStmt(Stmt::Kind::Expr, peek().line);
                 stmt->expr = parseExpr();
                 finishStmt();
@@ -255,7 +255,7 @@ private:
             return parseLocalDecl();
         }
         if (match(Token::Kind::KwReturn)) {
-            auto stmt = makeStmt(Stmt::Kind::Return, tokens_[pos_ - 1].line);
+            auto stmt = makeStmt(Stmt::Kind::Return, _tokens[_pos - 1].line);
             if (!check(Token::Kind::Semicolon) && !check(Token::Kind::Newline) && !check(Token::Kind::RBrace) && !check(Token::Kind::End)) {
                 stmt->expr = parseExpr();
             }
@@ -263,28 +263,28 @@ private:
             return stmt;
         }
         if (match(Token::Kind::KwBreak)) {
-            auto stmt = makeStmt(Stmt::Kind::Break, tokens_[pos_ - 1].line);
+            auto stmt = makeStmt(Stmt::Kind::Break, _tokens[_pos - 1].line);
             finishStmt();
             return stmt;
         }
         if (match(Token::Kind::KwContinue)) {
-            auto stmt = makeStmt(Stmt::Kind::Continue, tokens_[pos_ - 1].line);
+            auto stmt = makeStmt(Stmt::Kind::Continue, _tokens[_pos - 1].line);
             finishStmt();
             return stmt;
         }
         if (match(Token::Kind::KwGoto)) {
-            auto stmt = makeStmt(Stmt::Kind::Goto, tokens_[pos_ - 1].line);
+            auto stmt = makeStmt(Stmt::Kind::Goto, _tokens[_pos - 1].line);
             stmt->name = consume(Token::Kind::Identifier, "label").text;
             finishStmt();
             return stmt;
         }
         if (match(Token::Kind::KwStop)) {
-            auto stmt = makeStmt(Stmt::Kind::Stop, tokens_[pos_ - 1].line);
+            auto stmt = makeStmt(Stmt::Kind::Stop, _tokens[_pos - 1].line);
             finishStmt();
             return stmt;
         }
         if (match(Token::Kind::KwBreakpoint)) {
-            auto stmt = makeStmt(Stmt::Kind::Expr, tokens_[pos_ - 1].line);
+            auto stmt = makeStmt(Stmt::Kind::Expr, _tokens[_pos - 1].line);
             finishStmt();
             stmt->expr.reset();
             return stmt;
@@ -297,7 +297,7 @@ private:
 
     std::unique_ptr<Stmt> parseLocalDecl() {
         int line = peek().line;
-        ++pos_;
+        ++_pos;
         auto block = makeStmt(Stmt::Kind::Block, line);
         do {
             auto var = makeStmt(Stmt::Kind::Var, peek().line);
@@ -407,10 +407,10 @@ private:
         auto left = parseTernary();
         if (auto form = asAssign(peek().kind)) {
             if (!assignable(*left)) {
-                throw RError("invalid assignment target in " + name_, left->line);
+                throw RError("invalid assignment target in " + _name, left->line);
             }
             int line = peek().line;
-            ++pos_;
+            ++_pos;
             skipNewlines();
             auto rhs = parseExpr();
             auto expr = makeExpr(form->compound ? Expr::Kind::Modify : Expr::Kind::Assign, line);
@@ -426,10 +426,10 @@ private:
 
     std::unique_ptr<Expr> parseTernary() {
         auto cond = parseBinary(0);
-        size_t save = pos_;
+        size_t save = _pos;
         skipNewlines();
         if (!match(Token::Kind::Question)) {
-            pos_ = save;
+            _pos = save;
             return cond;
         }
         auto expr = makeExpr(Expr::Kind::Ternary, cond->line);
@@ -479,15 +479,15 @@ private:
     std::unique_ptr<Expr> parseBinary(int minPrec) {
         auto left = parseUnary();
         while (true) {
-            size_t save = pos_;
+            size_t save = _pos;
             skipNewlines();
             auto op = asBinary(peek().kind);
             if (!op || op->prec < minPrec) {
-                pos_ = save;
+                _pos = save;
                 break;
             }
             int line = peek().line;
-            ++pos_;
+            ++_pos;
             skipNewlines();
             auto right = parseBinary(op->prec + 1);
             auto expr = makeExpr(Expr::Kind::Binary, line);
@@ -500,17 +500,17 @@ private:
     }
 
     bool lookingAtCast() {
-        if (tokens_[pos_].kind != Token::Kind::LParen) {
+        if (_tokens[_pos].kind != Token::Kind::LParen) {
             return false;
         }
-        size_t i = pos_ + 1;
-        while (i < tokens_.size() && tokens_[i].kind == Token::Kind::Newline) {
+        size_t i = _pos + 1;
+        while (i < _tokens.size() && _tokens[i].kind == Token::Kind::Newline) {
             ++i;
         }
-        if (i >= tokens_.size()) {
+        if (i >= _tokens.size()) {
             return false;
         }
-        Token::Kind kind = tokens_[i].kind;
+        Token::Kind kind = _tokens[i].kind;
         return kind == Token::Kind::KwInt || kind == Token::Kind::KwFloat || kind == Token::Kind::KwStr;
     }
 
@@ -524,7 +524,7 @@ private:
             else consume(Token::Kind::KwStr, "type");
             std::string format;
             if (check(Token::Kind::String)) {
-                format = tokens_[pos_++].text;
+                format = _tokens[_pos++].text;
             }
             consume(Token::Kind::RParen, "')'");
             auto expr = makeExpr(Expr::Kind::Cast, line);
@@ -540,23 +540,23 @@ private:
             return expr;
         }
         if (match(Token::Kind::PlusPlus) || match(Token::Kind::MinusMinus)) {
-            Token op = tokens_[pos_ - 1];
+            Token op = _tokens[_pos - 1];
             auto expr = makeExpr(op.kind == Token::Kind::PlusPlus ? Expr::Kind::PostInc : Expr::Kind::PostDec, op.line);
             expr->prefix = true;
             expr->kids.push_back(parseUnary());
             return expr;
         }
-        if (check(Token::Kind::Minus) && pos_ + 1 < tokens_.size() &&
-            tokens_[pos_ + 1].kind == Token::Kind::Int && tokens_[pos_ + 1].text == "2147483648") {
+        if (check(Token::Kind::Minus) && _pos + 1 < _tokens.size() &&
+            _tokens[_pos + 1].kind == Token::Kind::Int && _tokens[_pos + 1].text == "2147483648") {
             int line = peek().line;
-            pos_ += 2;
+            _pos += 2;
             auto expr = makeExpr(Expr::Kind::Int, line);
             expr->intValue = std::numeric_limits<int>::min();
             return expr;
         }
         if (match(Token::Kind::Bang) || match(Token::Kind::KwNot) || match(Token::Kind::Minus) || match(Token::Kind::Tilde) ||
             match(Token::Kind::Amp) || match(Token::Kind::Star)) {
-            Token op = tokens_[pos_ - 1];
+            Token op = _tokens[_pos - 1];
             if (op.kind == Token::Kind::Star) {
                 auto inner = parseUnary();
                 // *n++ — это (*n)++, меняется значение по ссылке, а не «указатель».
@@ -626,7 +626,7 @@ private:
                 continue;
             }
             if (match(Token::Kind::PlusPlus) || match(Token::Kind::MinusMinus)) {
-                Token op = tokens_[pos_ - 1];
+                Token op = _tokens[_pos - 1];
                 auto updated = makeExpr(op.kind == Token::Kind::PlusPlus ? Expr::Kind::PostInc : Expr::Kind::PostDec, op.line);
                 updated->kids.push_back(std::move(expr));
                 expr = std::move(updated);
@@ -641,7 +641,7 @@ private:
         Token token = peek();
         if (match(Token::Kind::Int)) {
             if (token.text == "2147483648") {
-                throw RError("integer literal out of range in " + name_, token.line);
+                throw RError("integer literal out of range in " + _name, token.line);
             }
             auto expr = makeExpr(Expr::Kind::Int, token.line);
             expr->intValue = token.intValue;
@@ -656,11 +656,11 @@ private:
             auto expr = makeExpr(Expr::Kind::String, token.line);
             expr->text = token.text;
             while (true) {
-                size_t look = pos_;
-                while (look < tokens_.size() && tokens_[look].kind == Token::Kind::Newline) ++look;
-                if (look >= tokens_.size() || tokens_[look].kind != Token::Kind::String) break;
-                pos_ = look + 1;
-                expr->text += tokens_[look].text;
+                size_t look = _pos;
+                while (look < _tokens.size() && _tokens[look].kind == Token::Kind::Newline) ++look;
+                if (look >= _tokens.size() || _tokens[look].kind != Token::Kind::String) break;
+                _pos = look + 1;
+                expr->text += _tokens[look].text;
             }
             return expr;
         }
@@ -682,12 +682,12 @@ private:
             return expr;
         }
         if (check(Token::Kind::Identifier) && token.text == "newobj") {
-            size_t look = pos_ + 1;
-            while (look < tokens_.size() && tokens_[look].kind == Token::Kind::Newline) {
+            size_t look = _pos + 1;
+            while (look < _tokens.size() && _tokens[look].kind == Token::Kind::Newline) {
                 ++look;
             }
-            if (look < tokens_.size() && tokens_[look].kind == Token::Kind::Lt) {
-                ++pos_;
+            if (look < _tokens.size() && _tokens[look].kind == Token::Kind::Lt) {
+                ++_pos;
                 consume(Token::Kind::Lt, "'<'");
                 Token type = consume(Token::Kind::Identifier, "type name");
                 consume(Token::Kind::Gt, "'>'");
@@ -698,15 +698,15 @@ private:
                 return expr;
             }
         }
-        if (check(Token::Kind::KwVar) && pos_ + 1 < tokens_.size() && tokens_[pos_ + 1].kind == Token::Kind::LParen) {
-            Token name = tokens_[pos_++];
+        if (check(Token::Kind::KwVar) && _pos + 1 < _tokens.size() && _tokens[_pos + 1].kind == Token::Kind::LParen) {
+            Token name = _tokens[_pos++];
             auto expr = makeExpr(Expr::Kind::Name, name.line);
             expr->text = "var";
             return expr;
         }
         if ((check(Token::Kind::KwStr) || check(Token::Kind::KwInt) || check(Token::Kind::KwFloat)) &&
-            pos_ + 1 < tokens_.size() && tokens_[pos_ + 1].kind == Token::Kind::LParen) {
-            Token name = tokens_[pos_++];
+            _pos + 1 < _tokens.size() && _tokens[_pos + 1].kind == Token::Kind::LParen) {
+            Token name = _tokens[_pos++];
             auto expr = makeExpr(Expr::Kind::Name, name.line);
             expr->text = name.kind == Token::Kind::KwInt ? "int" : name.kind == Token::Kind::KwFloat ? "float" : "str";
             return expr;
@@ -723,7 +723,7 @@ private:
         }
         if (match(Token::Kind::LBrace)) {
             auto expr = makeExpr(Expr::Kind::List, token.line);
-            ++braceExpr_;
+            ++_braceExpr;
             if (!check(Token::Kind::RBrace)) {
                 do {
                     if (check(Token::Kind::RBrace)) {
@@ -733,7 +733,7 @@ private:
                 } while (match(Token::Kind::Comma));
             }
             consume(Token::Kind::RBrace, "'}'");
-            --braceExpr_;
+            --_braceExpr;
             return expr;
         }
         if (match(Token::Kind::LBracket)) {
@@ -746,7 +746,7 @@ private:
             consume(Token::Kind::RBracket, "']'");
             return expr;
         }
-        throw RError("expected expression in " + name_ + ", got " + spell(token), token.line);
+        throw RError("expected expression in " + _name + ", got " + spell(token), token.line);
     }
 
     // Куда можно присваивать. Call в этом списке — не «результат вызова»,

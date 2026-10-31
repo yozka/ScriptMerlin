@@ -46,8 +46,8 @@ namespace sme
 		
 		// Подмена диска и логгера. load и #include читают через эту файловую систему.
 		// Логгер получает ошибки call/resume и println.
-		void useFileSystem(files::IFileSystem::Ptr fileSystem);
-		void useLog(log::ILogging::Ptr logger);
+		void SetFileSystem(files::IFileSystem::Ptr files);
+		void SetLog(log::ILogging::Ptr log);
 		
 	public:
 		// Натив виден скрипту как обычная функция. Повторное имя — ошибка.
@@ -99,7 +99,7 @@ namespace sme
 		void compileUnit(const struct SourceUnit& unit, std::string_view name);
 		void rejectActiveCall() const;
 		Value invoke(size_t index, std::span<const Value> args);
-		std::unique_ptr<State> state_;
+		std::unique_ptr<State> _state;
 	};
 
 }

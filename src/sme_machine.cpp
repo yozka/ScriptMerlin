@@ -113,7 +113,7 @@ const std::string* stringData(const Value& value) {
 
 }  // анонимное пространство имён
 
-Machine::Machine(Engine& engine, State& state) : engine_(engine), state_(state) {}
+Machine::Machine(Engine& engine, State& state) : _engine(engine), _state(state) {}
 
 Value Machine::materialize(const Chunk& chunk, size_t constant, int line) {
     if (constant >= chunk.constants.size()) {
@@ -197,7 +197,7 @@ int Machine::compare(const Value& lhs, const Value& rhs, int line) {
 
 Value Machine::unary(Op op, const Value& value, int line) {
     if (op == Op::Not) {
-        return Value::Integer(state_.truthy(value) ? 0 : 1);
+        return Value::Integer(_state.truthy(value) ? 0 : 1);
     }
     if (op == Op::Neg) {
         if (const auto* integer = std::get_if<int>(&value)) {
@@ -222,8 +222,8 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
         return intBinary(op, std::get<int>(lhs), std::get<int>(rhs), line);
     }
     if (op == Op::LogicAnd || op == Op::LogicOr) {
-        bool left = state_.truthy(lhs);
-        bool right = state_.truthy(rhs);
+        bool left = _state.truthy(lhs);
+        bool right = _state.truthy(rhs);
         bool result = op == Op::LogicAnd ? (left && right) : (left || right);
         return Value::Integer(result ? 1 : 0);
     }
@@ -366,17 +366,17 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
 }
 
 Value Machine::run(size_t function, std::span<const Value> args) {
-    if (function >= state_.functions.size()) {
+    if (function >= _state.functions.size()) {
         throw RError("unknown function");
     }
-    const Chunk& chunk = state_.functions[function];
-    if (state_.runStack.size() >= SME_MAX_CALL_DEPTH) {
+    const Chunk& chunk = _state.functions[function];
+    if (_state.runStack.size() >= SME_MAX_CALL_DEPTH) {
         throw RError("script call nested too deeply");
     }
 
     Frame frame;
     frame.function = function;
-    frame.generation = state_.freshFrameId();
+    frame.generation = _state.freshFrameId();
     frame.regs.resize(chunk.registerCount);
     const size_t supplied = std::min(args.size(), static_cast<size_t>(chunk.parameterCount));
     frame.supplied = static_cast<uint16_t>(supplied);
@@ -385,7 +385,7 @@ Value Machine::run(size_t function, std::span<const Value> args) {
     }
     RunState fresh;
     fresh.frames.push_back(std::move(frame));
-    state_.runStack.push_back(std::move(fresh));
+    _state.runStack.push_back(std::move(fresh));
     // Снимает этот RunState при return и при исключении. stop кадр оставляет.
     struct Guard {
         State& state;
@@ -396,7 +396,7 @@ Value Machine::run(size_t function, std::span<const Value> args) {
             }
         }
         void keep() { active = false; }
-    } guard{state_};
+    } guard{_state};
     std::optional<Value> result = execute();
     if (!result) {
         guard.keep();
@@ -406,7 +406,7 @@ Value Machine::run(size_t function, std::span<const Value> args) {
 }
 
 Value Machine::resume() {
-    if (state_.runStack.empty()) {
+    if (_state.runStack.empty()) {
         throw RError("nothing to resume");
     }
     // Тот же страж, что у run, но кадр уже лежит на стеке: его положил остановившийся call.
@@ -419,7 +419,7 @@ Value Machine::resume() {
             }
         }
         void keep() { active = false; }
-    } guard{state_};
+    } guard{_state};
     std::optional<Value> result = execute();
     if (!result) {
         guard.keep();
@@ -542,12 +542,12 @@ float castStringToFloat(const std::string& text, const std::string& format) {
 // вызывающего увеличивают до push. write пишет в текущий верхний кадр.
 std::optional<Value> Machine::execute() {
     while (true) {
-        RunState& active = state_.runStack.back();
+        RunState& active = _state.runStack.back();
         if (active.frames.empty()) {
             throw RError("call stack underflow");
         }
         Frame& frame = active.frames.back();
-        const Chunk& chunk = state_.functions[frame.function];
+        const Chunk& chunk = _state.functions[frame.function];
         if (frame.ip >= chunk.code.size()) {
             throw RError("function '" + chunk.name + "' ran out of instructions");
         }
@@ -580,15 +580,15 @@ std::optional<Value> Machine::execute() {
             break;
         }
         case Op::LoadGlobal:
-            if (ins.b >= state_.globals.size()) throw RError("internal global fault", ins.line);
-            write(ins.a, state_.globals[ins.b].value);
+            if (ins.b >= _state.globals.size()) throw RError("internal global fault", ins.line);
+            write(ins.a, _state.globals[ins.b].value);
             bump();
             break;
         case Op::StoreGlobal: {
-            if (ins.a >= state_.globals.size()) throw RError("internal global fault", ins.line);
+            if (ins.a >= _state.globals.size()) throw RError("internal global fault", ins.line);
             Value incoming = fastReg(frame, ins.b);
             if (!incoming.IsNull()) {
-                state_.globals[ins.a].value = std::move(incoming);
+                _state.globals[ins.a].value = std::move(incoming);
             }
             bump();
             break;
@@ -638,7 +638,7 @@ std::optional<Value> Machine::execute() {
             break;
         case Op::JumpIfFalse:
         case Op::JumpIfTrue: {
-            bool flag = state_.truthy(fastReg(frame, ins.a));
+            bool flag = _state.truthy(fastReg(frame, ins.a));
             if ((ins.op == Op::JumpIfFalse && !flag) || (ins.op == Op::JumpIfTrue && flag)) {
                 frame.ip = ins.b;
             } else {
@@ -790,16 +790,16 @@ std::optional<Value> Machine::execute() {
             const std::span<const Value> args(frame.regs.data() + ins.c, ins.d);
             bump();
             if (ins.op == Op::CallNative) {
-                if (ins.b >= state_.natives.size()) throw RError("internal native fault", ins.line);
-                Value result = state_.natives[ins.b](engine_, args);
-                state_.runStack.back().frames.back().regs[ins.a] = std::move(result);
+                if (ins.b >= _state.natives.size()) throw RError("internal native fault", ins.line);
+                Value result = _state.natives[ins.b](_engine, args);
+                _state.runStack.back().frames.back().regs[ins.a] = std::move(result);
                 break;
             }
-            if (ins.b >= state_.functions.size()) throw RError("internal function fault", ins.line);
-            const Chunk& callee = state_.functions[ins.b];
+            if (ins.b >= _state.functions.size()) throw RError("internal function fault", ins.line);
+            const Chunk& callee = _state.functions[ins.b];
             Frame next;
             next.function = ins.b;
-            next.generation = state_.freshFrameId();
+            next.generation = _state.freshFrameId();
             next.writesParent = true;
             next.parentDest = ins.a;
             next.regs.resize(callee.registerCount);
@@ -808,8 +808,8 @@ std::optional<Value> Machine::execute() {
             for (uint16_t i = 0; i < count && i < next.regs.size(); ++i) {
                 next.regs[i] = args[i];
             }
-            state_.runStack.back().frames.push_back(std::move(next));
-            if (state_.runStack.back().frames.size() > SME_MAX_RECURSION_DEPTH) {
+            _state.runStack.back().frames.push_back(std::move(next));
+            if (_state.runStack.back().frames.size() > SME_MAX_RECURSION_DEPTH) {
                 throw RError("script recursion is too deep");
             }
             break;
@@ -818,12 +818,12 @@ std::optional<Value> Machine::execute() {
             Value result = fastReg(frame, ins.a);
             bool writeParent = frame.writesParent;
             uint16_t dest = frame.parentDest;
-            state_.runStack.back().frames.pop_back();
-            if (state_.runStack.back().frames.empty()) {
+            _state.runStack.back().frames.pop_back();
+            if (_state.runStack.back().frames.empty()) {
                 return result;
             }
             if (writeParent) {
-                state_.runStack.back().frames.back().regs[dest] = std::move(result);
+                _state.runStack.back().frames.back().regs[dest] = std::move(result);
             }
             break;
         }
@@ -876,35 +876,35 @@ std::optional<Value> Machine::execute() {
         case Op::GetProp:
         case Op::SetProp:
         case Op::CallMethod: {
-            const std::string_view name = state_.constantString(chunk, ins.op == Op::SetProp ? ins.b : ins.c, ins.line);
+            const std::string_view name = _state.constantString(chunk, ins.op == Op::SetProp ? ins.b : ins.c, ins.line);
             Value object = fastReg(frame, ins.op == Op::SetProp ? ins.a : ins.b);
             if (!object.IsObject()) throw RError("value has no properties", ins.line);
             IScriptObject* target = std::get<Handle>(object).get();
             if (ins.op == Op::GetProp) {
-                Value result = target->GetProperty(engine_, name);
+                Value result = target->GetProperty(_engine, name);
                 write(ins.a, std::move(result));
                 bump();
                 break;
             }
             if (ins.op == Op::SetProp) {
                 Value incoming = fastReg(frame, ins.c);
-                target->SetProperty(engine_, name, incoming);
+                target->SetProperty(_engine, name, incoming);
                 bump();
                 break;
             }
             const std::span<const Value> args(frame.regs.data() + ins.d, ins.e);
             bump();
-            Value result = target->Call(engine_, name, args);
-            state_.runStack.back().frames.back().regs[ins.a] = std::move(result);
+            Value result = target->Call(_engine, name, args);
+            _state.runStack.back().frames.back().regs[ins.a] = std::move(result);
             break;
         }
         case Op::MakeRefLocal: {
             // Ссылочный строковый слот получает разделяемое стабильное хранилище.
-            auto& frames = state_.runStack.back().frames;
+            auto& frames = _state.runStack.back().frames;
             promoteString(frames.back().regs[ins.b]);
             write(ins.a, Value(std::in_place_type<LocalReference>,
                 LocalReference{static_cast<uint32_t>(frames.size() - 1), frames.back().generation,
-                    ins.b, state_.freshReferenceId()}));
+                    ins.b, _state.freshReferenceId()}));
             bump();
             break;
         }
@@ -921,21 +921,21 @@ std::optional<Value> Machine::execute() {
                 promoteString((*container)[tableIndex]);
             }
             write(ins.a, Value(std::in_place_type<IndexedReference>,
-                IndexedReference{container, tableIndex, state_.freshReferenceId()}));
+                IndexedReference{container, tableIndex, _state.freshReferenceId()}));
             bump();
             break;
         }
         case Op::MakeRefGlobal: {
             const size_t slot = ins.b;
-            if (slot < state_.globals.size()) promoteString(state_.globals[slot].value);
+            if (slot < _state.globals.size()) promoteString(_state.globals[slot].value);
             write(ins.a, Value(std::in_place_type<GlobalReference>,
-                GlobalReference{static_cast<uint32_t>(slot), state_.freshReferenceId()}));
+                GlobalReference{static_cast<uint32_t>(slot), _state.freshReferenceId()}));
             bump();
             break;
         }
         case Op::LoadRef: {
             Value ref = fastReg(frame, ins.b);
-            Value& target = referenced(state_, ref, ins.line);
+            Value& target = referenced(_state, ref, ins.line);
             promoteString(target);
             write(ins.a, target);
             bump();
@@ -951,7 +951,7 @@ std::optional<Value> Machine::execute() {
                         throw RError("cyclic table ownership is not supported", ins.line);
                     }
                 }
-                Value& target = referenced(state_, ref, ins.line);
+                Value& target = referenced(_state, ref, ins.line);
                 target = std::move(incoming);
                 promoteString(target);
             }
@@ -961,13 +961,13 @@ std::optional<Value> Machine::execute() {
         case Op::RefGlobal: {
             Value index = fastReg(frame, ins.b);
             const auto* slot = std::get_if<int>(&index);
-            if (!slot || *slot < 0 || static_cast<size_t>(*slot) >= state_.globals.size()) {
+            if (!slot || *slot < 0 || static_cast<size_t>(*slot) >= _state.globals.size()) {
                 throw RError("global index out of range", ins.line);
             }
             const uint32_t globalSlot = static_cast<uint32_t>(*slot);
-            promoteString(state_.globals[globalSlot].value);
+            promoteString(_state.globals[globalSlot].value);
             write(ins.a, Value(std::in_place_type<GlobalReference>,
-                GlobalReference{globalSlot, state_.freshReferenceId()}));
+                GlobalReference{globalSlot, _state.freshReferenceId()}));
             bump();
             break;
         }
@@ -1005,9 +1005,9 @@ std::optional<Value> Machine::execute() {
             break;
         }
         case Op::NewObj: {
-            const std::string_view type = state_.constantString(chunk, ins.b, ins.line);
-            auto factory = state_.factories.find(std::string(type));
-            if (factory == state_.factories.end() || !factory->second) {
+            const std::string_view type = _state.constantString(chunk, ins.b, ins.line);
+            auto factory = _state.factories.find(std::string(type));
+            if (factory == _state.factories.end() || !factory->second) {
                 throw RError("unknown type '" + std::string(type) + "'", ins.line);
             }
             std::shared_ptr<IScriptObject> object = factory->second();
@@ -1022,7 +1022,7 @@ std::optional<Value> Machine::execute() {
             Value value = fastReg(frame, ins.b);
             std::string format;
             if (ins.d != 65535) {
-                format = std::string(state_.constantString(chunk, ins.d, ins.line));
+                format = std::string(_state.constantString(chunk, ins.d, ins.line));
             }
             if (ins.c == 2 && value.IsString()) {
                 write(ins.a, value);
@@ -1063,20 +1063,20 @@ std::optional<Value> Machine::execute() {
         case Op::CallName: {
             // Имя ищется линейно: сначала скриптовые функции, потом нативы.
             // Нет ни там, ни там — в регистр пишется int 0, не null и не ошибка.
-            const std::string_view name = state_.constantString(chunk, ins.b, ins.line);
+            const std::string_view name = _state.constantString(chunk, ins.b, ins.line);
             if (ins.d > 0 && static_cast<size_t>(ins.c) + ins.d > frame.regs.size()) {
                 throw RError("internal argument fault", ins.line);
             }
             const std::span<const Value> args(frame.regs.data() + ins.c, ins.d);
             bump();
-            auto function = std::find_if(state_.functions.begin(), state_.functions.end(), [&](const Chunk& item) {
+            auto function = std::find_if(_state.functions.begin(), _state.functions.end(), [&](const Chunk& item) {
                 return item.name == name;
             });
-            if (function != state_.functions.end()) {
-                const auto index = static_cast<size_t>(std::distance(state_.functions.begin(), function));
+            if (function != _state.functions.end()) {
+                const auto index = static_cast<size_t>(std::distance(_state.functions.begin(), function));
                 Frame next;
                 next.function = index;
-                next.generation = state_.freshFrameId();
+                next.generation = _state.freshFrameId();
                 next.writesParent = true;
                 next.parentDest = ins.a;
                 next.regs.resize(function->registerCount);
@@ -1085,16 +1085,16 @@ std::optional<Value> Machine::execute() {
                 for (uint16_t i = 0; i < count && i < next.regs.size(); ++i) {
                     next.regs[i] = args[i];
                 }
-                state_.runStack.back().frames.push_back(std::move(next));
-                if (state_.runStack.back().frames.size() > SME_MAX_RECURSION_DEPTH) {
+                _state.runStack.back().frames.push_back(std::move(next));
+                if (_state.runStack.back().frames.size() > SME_MAX_RECURSION_DEPTH) {
                     throw RError("script recursion is too deep");
                 }
                 break;
             }
-            auto native = std::find(state_.nativeNames.begin(), state_.nativeNames.end(), name);
-            if (native != state_.nativeNames.end()) {
-                const auto index = static_cast<size_t>(std::distance(state_.nativeNames.begin(), native));
-                write(ins.a, state_.natives[index](engine_, args));
+            auto native = std::find(_state.nativeNames.begin(), _state.nativeNames.end(), name);
+            if (native != _state.nativeNames.end()) {
+                const auto index = static_cast<size_t>(std::distance(_state.nativeNames.begin(), native));
+                write(ins.a, _state.natives[index](_engine, args));
                 break;
             }
             write(ins.a, Value::Integer(0));

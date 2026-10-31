@@ -17,31 +17,31 @@ public:
     FunctionCompiler(const Function& function,
                      const std::unordered_map<std::string, uint16_t>& functions,
                      const CompileEnv& env)
-        : function_(function)
-        , functions_(functions)
-        , env_(env) {}
+        : _function(function)
+        , _functions(functions)
+        , _env(env) {}
 
     Chunk run() {
-        for (const std::string& param : function_.params) {
-            declare(param, function_.line);
+        for (const std::string& param : _function.params) {
+            declare(param, _function.line);
         }
-        for (const auto& stmt : function_.body) {
+        for (const auto& stmt : _function.body) {
             collect(*stmt);
         }
-        watermark_ = static_cast<uint16_t>(locals_.size());
-        regCount_ = watermark_;
-        compileBody(function_.body);
+        _watermark = static_cast<uint16_t>(_locals.size());
+        _regCount = _watermark;
+        compileBody(_function.body);
         finishLabels();
         uint16_t result = allocTemp();
-        emit(Op::LoadConst, result, addConst(std::monostate{}), 0, 0, 0, function_.line);
-        emit(Op::Return, result, 0, 0, 0, 0, function_.line);
+        emit(Op::LoadConst, result, addConst(std::monostate{}), 0, 0, 0, _function.line);
+        emit(Op::Return, result, 0, 0, 0, 0, _function.line);
 
         Chunk chunk;
-        chunk.name = function_.name;
-        chunk.parameterCount = static_cast<uint16_t>(function_.params.size());
-        chunk.registerCount = regCount_;
-        chunk.code = std::move(code_);
-        chunk.constants = std::move(constants_);
+        chunk.name = _function.name;
+        chunk.parameterCount = static_cast<uint16_t>(_function.params.size());
+        chunk.registerCount = _regCount;
+        chunk.code = std::move(_code);
+        chunk.constants = std::move(_constants);
         return chunk;
     }
 
@@ -51,32 +51,32 @@ private:
         std::vector<uint16_t> continues;
     };
 
-    const Function& function_;
-    const std::unordered_map<std::string, uint16_t>& functions_;
-    const CompileEnv& env_;
-    std::unordered_map<std::string, uint16_t> locals_;
-    std::unordered_map<std::string, uint16_t> labels_;
-    std::unordered_map<std::string, std::vector<uint16_t>> pendingGotos_;
-    std::vector<Instruction> code_;
-    std::vector<Constant> constants_;
-    std::vector<Loop> loops_;
-    uint16_t watermark_ = 0;
-    uint16_t regCount_ = 0;
+    const Function& _function;
+    const std::unordered_map<std::string, uint16_t>& _functions;
+    const CompileEnv& _env;
+    std::unordered_map<std::string, uint16_t> _locals;
+    std::unordered_map<std::string, uint16_t> _labels;
+    std::unordered_map<std::string, std::vector<uint16_t>> _pendingGotos;
+    std::vector<Instruction> _code;
+    std::vector<Constant> _constants;
+    std::vector<Loop> _loops;
+    uint16_t _watermark = 0;
+    uint16_t _regCount = 0;
 
     void declare(const std::string& name, int line) {
-        if (locals_.contains(name)) {
+        if (_locals.contains(name)) {
             throw RError("duplicate variable '" + name + "'", line);
         }
-        if (locals_.size() >= 65535) {
+        if (_locals.size() >= 65535) {
             throw RError("too many local variables", line);
         }
-        locals_.emplace(name, static_cast<uint16_t>(locals_.size()));
+        _locals.emplace(name, static_cast<uint16_t>(_locals.size()));
     }
 
     // Присваивание в неизвестное имя молча заводит локал. Опечатка в левой
     // части поэтому не ошибка, а новая переменная. Глобал с таким именем не перекрывается.
     void note(const std::string& name, int line) {
-        if (locals_.contains(name) || env_.globals.contains(name)) {
+        if (_locals.contains(name) || _env.globals.contains(name)) {
             return;
         }
         declare(name, line);
@@ -104,7 +104,7 @@ private:
         if (stmt.kind == Stmt::Kind::Var) {
             declare(stmt.name, stmt.line);
         }
-        if (stmt.kind == Stmt::Kind::For && !locals_.contains(stmt.name) && !env_.globals.contains(stmt.name)) {
+        if (stmt.kind == Stmt::Kind::For && !_locals.contains(stmt.name) && !_env.globals.contains(stmt.name)) {
             declare(stmt.name, stmt.line);
         }
         if (stmt.expr) collectExpr(*stmt.expr);
@@ -115,26 +115,26 @@ private:
     }
 
     uint16_t allocTemp() {
-        if (watermark_ == 65535) {
-            throw RError("too many registers", function_.line);
+        if (_watermark == 65535) {
+            throw RError("too many registers", _function.line);
         }
-        uint16_t reg = watermark_++;
-        if (watermark_ > regCount_) {
-            regCount_ = watermark_;
+        uint16_t reg = _watermark++;
+        if (_watermark > _regCount) {
+            _regCount = _watermark;
         }
         return reg;
     }
 
     uint16_t addConst(Constant constant) {
-        if (constants_.size() >= 65535) {
-            throw RError("too many constants", function_.line);
+        if (_constants.size() >= 65535) {
+            throw RError("too many constants", _function.line);
         }
-        constants_.push_back(std::move(constant));
-        return static_cast<uint16_t>(constants_.size() - 1);
+        _constants.push_back(std::move(constant));
+        return static_cast<uint16_t>(_constants.size() - 1);
     }
 
     uint16_t emit(Op op, uint16_t a, uint16_t b, uint16_t c, uint16_t d, uint16_t e, int line) {
-        if (code_.size() >= 65535) {
+        if (_code.size() >= 65535) {
             throw RError("function is too large", line);
         }
         Instruction ins;
@@ -145,11 +145,11 @@ private:
         ins.d = d;
         ins.e = e;
         ins.line = static_cast<uint16_t>(line > 0 && line <= 65535 ? line : 1);
-        code_.push_back(ins);
-        return static_cast<uint16_t>(code_.size() - 1);
+        _code.push_back(ins);
+        return static_cast<uint16_t>(_code.size() - 1);
     }
 
-    uint16_t here() const { return static_cast<uint16_t>(code_.size()); }
+    uint16_t here() const { return static_cast<uint16_t>(_code.size()); }
 
     uint16_t compileExpr(const Expr& expr) {
         switch (expr.kind) {
@@ -225,7 +225,7 @@ private:
     // параметра слот null, код 0, поэтому if (!?x) x = значение по умолчанию работает.
     uint16_t compileQuery(const Expr& expr) {
         uint16_t dest = allocTemp();
-        if (!locals_.contains(expr.text) && !env_.globals.contains(expr.text)) {
+        if (!_locals.contains(expr.text) && !_env.globals.contains(expr.text)) {
             emit(Op::LoadConst, dest, addConst(int{0}), 0, 0, 0, expr.line);
             return dest;
         }
@@ -239,15 +239,15 @@ private:
     }
 
     uint16_t compileName(const Expr& expr) {
-        if (auto it = locals_.find(expr.text); it != locals_.end()) {
+        if (auto it = _locals.find(expr.text); it != _locals.end()) {
             return it->second;
         }
-        if (auto it = env_.globals.find(expr.text); it != env_.globals.end()) {
+        if (auto it = _env.globals.find(expr.text); it != _env.globals.end()) {
             uint16_t dest = allocTemp();
             emit(Op::LoadGlobal, dest, it->second, 0, 0, 0, expr.line);
             return dest;
         }
-        if (functions_.contains(expr.text) || env_.natives.contains(expr.text)) {
+        if (_functions.contains(expr.text) || _env.natives.contains(expr.text)) {
             throw RError("function '" + expr.text + "' must be called", expr.line);
         }
         uint16_t dest = allocTemp();
@@ -306,7 +306,7 @@ private:
             emit(Op::RefGlobal, dest, args[0], 0, 0, 0, expr.line);
             return dest;
         }
-        uint16_t base = watermark_;
+        uint16_t base = _watermark;
         for (uint16_t arg : args) {
             uint16_t slot = allocTemp();
             emit(Op::Copy, slot, arg, 0, 0, 0, expr.line);
@@ -314,11 +314,11 @@ private:
         uint16_t dest = allocTemp();
         uint16_t argc = static_cast<uint16_t>(args.size());
         if (callee.kind == Expr::Kind::Name) {
-            if (auto function = functions_.find(callee.text); function != functions_.end()) {
+            if (auto function = _functions.find(callee.text); function != _functions.end()) {
                 emit(Op::Call, dest, function->second, base, argc, 0, expr.line);
                 return dest;
             }
-            if (auto native = env_.natives.find(callee.text); native != env_.natives.end()) {
+            if (auto native = _env.natives.find(callee.text); native != _env.natives.end()) {
                 emit(Op::CallNative, dest, native->second, base, argc, 0, expr.line);
                 return dest;
             }
@@ -355,7 +355,7 @@ private:
         for (const auto& kid : expr.kids) {
             items.push_back(compileExpr(*kid));
         }
-        uint16_t base = watermark_;
+        uint16_t base = _watermark;
         for (uint16_t item : items) {
             uint16_t slot = allocTemp();
             emit(Op::Copy, slot, item, 0, 0, 0, expr.line);
@@ -369,8 +369,8 @@ private:
         const Expr& target = *expr.kids[0];
         const Expr& valueExpr = *expr.kids[1];
         if (target.kind == Expr::Kind::Name) {
-            const auto local = locals_.find(target.text);
-            if (local != locals_.end()) {
+            const auto local = _locals.find(target.text);
+            if (local != _locals.end()) {
                 const uint16_t dest = local->second;
                 if (valueExpr.kind == Expr::Kind::Binary) {
                     const uint16_t lhs = compileExpr(*valueExpr.kids[0]);
@@ -426,10 +426,10 @@ private:
     // дважды вызвал бы выражение объекта, и чтение с записью могли разъехаться.
     Place placeOf(const Expr& target, const char* invalid) {
         if (target.kind == Expr::Kind::Name) {
-            if (auto it = locals_.find(target.text); it != locals_.end()) {
+            if (auto it = _locals.find(target.text); it != _locals.end()) {
                 return Place{Place::Kind::Local, it->second, 0};
             }
-            if (auto it = env_.globals.find(target.text); it != env_.globals.end()) {
+            if (auto it = _env.globals.find(target.text); it != _env.globals.end()) {
                 return Place{Place::Kind::Global, it->second, 0};
             }
             throw RError("unknown variable '" + target.text + "'", target.line);
@@ -559,7 +559,7 @@ private:
         patchConditionJump(jumpFalse, here());
         uint16_t no = compileExpr(*expr.kids[2]);
         emit(Op::Copy, dest, no, 0, 0, 0, expr.line);
-        code_[jumpEnd].a = here();
+        _code[jumpEnd].a = here();
         return dest;
     }
 
@@ -587,10 +587,10 @@ private:
     }
 
     void patchConditionJump(uint16_t jump, uint16_t target) {
-        if (code_[jump].op == Op::JumpIfCmpFalse || code_[jump].op == Op::JumpIfCmpImmFalse) {
-            code_[jump].e = target;
+        if (_code[jump].op == Op::JumpIfCmpFalse || _code[jump].op == Op::JumpIfCmpImmFalse) {
+            _code[jump].e = target;
         }
-        else code_[jump].b = target;
+        else _code[jump].b = target;
     }
 
     uint16_t compileCast(const Expr& expr) {
@@ -617,11 +617,11 @@ private:
             throw RError("address expects a variable", expr.line);
         }
         uint16_t dest = allocTemp();
-        if (auto it = locals_.find(target.text); it != locals_.end()) {
+        if (auto it = _locals.find(target.text); it != _locals.end()) {
             emit(Op::MakeRefLocal, dest, it->second, 0, 0, 0, expr.line);
             return dest;
         }
-        if (auto it = env_.globals.find(target.text); it != env_.globals.end()) {
+        if (auto it = _env.globals.find(target.text); it != _env.globals.end()) {
             emit(Op::MakeRefGlobal, dest, it->second, 0, 0, 0, expr.line);
             return dest;
         }
@@ -640,7 +640,7 @@ private:
         case Stmt::Kind::Var:
             if (stmt.expr) {
                 uint16_t value = compileExpr(*stmt.expr);
-                emit(Op::Move, locals_.at(stmt.name), value, 0, 0, 0, stmt.line);
+                emit(Op::Move, _locals.at(stmt.name), value, 0, 0, 0, stmt.line);
             }
             break;
         case Stmt::Kind::Expr:
@@ -668,13 +668,13 @@ private:
             break;
         }
         case Stmt::Kind::Break: {
-            if (loops_.empty()) throw RError("break outside of a loop", stmt.line);
-            loops_.back().breaks.push_back(emit(Op::Jump, 0, 0, 0, 0, 0, stmt.line));
+            if (_loops.empty()) throw RError("break outside of a loop", stmt.line);
+            _loops.back().breaks.push_back(emit(Op::Jump, 0, 0, 0, 0, 0, stmt.line));
             break;
         }
         case Stmt::Kind::Continue: {
-            if (loops_.empty()) throw RError("continue outside of a loop", stmt.line);
-            loops_.back().continues.push_back(emit(Op::Jump, 0, 0, 0, 0, 0, stmt.line));
+            if (_loops.empty()) throw RError("continue outside of a loop", stmt.line);
+            _loops.back().continues.push_back(emit(Op::Jump, 0, 0, 0, 0, 0, stmt.line));
             break;
         }
         case Stmt::Kind::If:
@@ -699,38 +699,38 @@ private:
     // пишет Copy, поэтому перед оператором не нужно затирать все регистры
     // отдельным LoadConst: это был почти весь байткод горячего цикла.
     void compileBody(const std::vector<std::unique_ptr<Stmt>>& body) {
-        uint16_t base = watermark_;
+        uint16_t base = _watermark;
         for (const auto& stmt : body) {
-            watermark_ = base;
+            _watermark = base;
             compileStmt(*stmt);
         }
-        watermark_ = base;
+        _watermark = base;
     }
 
     void compileLabel(const Stmt& stmt) {
-        if (labels_.contains(stmt.name)) {
+        if (_labels.contains(stmt.name)) {
             throw RError("duplicate label '" + stmt.name + "'", stmt.line);
         }
-        labels_.emplace(stmt.name, here());
-        for (uint16_t jump : pendingGotos_[stmt.name]) {
-            code_[jump].a = here();
+        _labels.emplace(stmt.name, here());
+        for (uint16_t jump : _pendingGotos[stmt.name]) {
+            _code[jump].a = here();
         }
-        pendingGotos_.erase(stmt.name);
+        _pendingGotos.erase(stmt.name);
     }
 
     void compileGoto(const Stmt& stmt) {
         uint16_t jump = emit(Op::Jump, 0, 0, 0, 0, 0, stmt.line);
-        if (auto it = labels_.find(stmt.name); it != labels_.end()) {
-            code_[jump].a = it->second;
+        if (auto it = _labels.find(stmt.name); it != _labels.end()) {
+            _code[jump].a = it->second;
         } else {
-            pendingGotos_[stmt.name].push_back(jump);
+            _pendingGotos[stmt.name].push_back(jump);
         }
     }
 
     void finishLabels() {
-        for (const auto& [name, jumps] : pendingGotos_) {
+        for (const auto& [name, jumps] : _pendingGotos) {
             if (!jumps.empty()) {
-                throw RError("unknown label '" + name + "'", function_.line);
+                throw RError("unknown label '" + name + "'", _function.line);
             }
         }
     }
@@ -742,7 +742,7 @@ private:
             uint16_t jumpEnd = emit(Op::Jump, 0, 0, 0, 0, 0, stmt.line);
             patchConditionJump(jumpFalse, here());
             compileBody(stmt.elseBody);
-            code_[jumpEnd].a = here();
+            _code[jumpEnd].a = here();
         } else {
             patchConditionJump(jumpFalse, here());
         }
@@ -750,44 +750,44 @@ private:
 
     void compileWhile(const Stmt& stmt) {
         uint16_t start = here();
-        loops_.push_back(Loop{});
+        _loops.push_back(Loop{});
         const uint16_t jumpFalse = compileConditionJumpFalse(*stmt.expr, stmt.line);
         compileBody(stmt.body);
         uint16_t step = here();
-        for (uint16_t jump : loops_.back().continues) {
-            code_[jump].a = step;
+        for (uint16_t jump : _loops.back().continues) {
+            _code[jump].a = step;
         }
         emit(Op::Jump, start, 0, 0, 0, 0, stmt.line);
         uint16_t end = here();
         patchConditionJump(jumpFalse, end);
-        for (uint16_t jump : loops_.back().breaks) {
-            code_[jump].a = end;
+        for (uint16_t jump : _loops.back().breaks) {
+            _code[jump].a = end;
         }
-        loops_.pop_back();
+        _loops.pop_back();
     }
 
     void compileDo(const Stmt& stmt) {
         uint16_t start = here();
-        loops_.push_back(Loop{});
+        _loops.push_back(Loop{});
         compileBody(stmt.body);
         uint16_t condIp = here();
-        for (uint16_t jump : loops_.back().continues) {
-            code_[jump].a = condIp;
+        for (uint16_t jump : _loops.back().continues) {
+            _code[jump].a = condIp;
         }
         uint16_t cond = compileExpr(*stmt.expr);
         emit(Op::JumpIfTrue, cond, start, 0, 0, 0, stmt.line);
         uint16_t end = here();
-        for (uint16_t jump : loops_.back().breaks) {
-            code_[jump].a = end;
+        for (uint16_t jump : _loops.back().breaks) {
+            _code[jump].a = end;
         }
-        loops_.pop_back();
+        _loops.pop_back();
     }
 
     // Границы включительные, шаг всегда +1. Конец диапазона копируется в регистр
     // один раз: если справа локал, цикл не должен разъехаться, когда этот локал меняют внутри.
     void compileFor(const Stmt& stmt) {
-        uint16_t index = locals_.contains(stmt.name) ? locals_.at(stmt.name) : env_.globals.at(stmt.name);
-        bool global = !locals_.contains(stmt.name);
+        uint16_t index = _locals.contains(stmt.name) ? _locals.at(stmt.name) : _env.globals.at(stmt.name);
+        bool global = !_locals.contains(stmt.name);
         uint16_t start = compileExpr(*stmt.expr);
         if (global) emit(Op::StoreGlobal, index, start, 0, 0, 0, stmt.line);
         else emit(Op::Move, index, start, 0, 0, 0, stmt.line);
@@ -800,7 +800,7 @@ private:
             emit(Op::LoadConst, one, addConst(int{1}), 0, 0, 0, stmt.line);
         }
 
-        loops_.push_back(Loop{});
+        _loops.push_back(Loop{});
         uint16_t condIp = here();
         uint16_t current = index;
         if (global) {
@@ -811,8 +811,8 @@ private:
         const uint16_t bodyIp = here();
         compileBody(stmt.body);
         uint16_t increment = here();
-        for (uint16_t jump : loops_.back().continues) {
-            code_[jump].a = increment;
+        for (uint16_t jump : _loops.back().continues) {
+            _code[jump].a = increment;
         }
         if (global) {
             uint16_t loaded = allocTemp();
@@ -824,11 +824,11 @@ private:
             emit(Op::IncJumpLe, index, end, bodyIp, 0, 0, stmt.line);
         }
         uint16_t endIp = here();
-        code_[jumpFalse].c = endIp;
-        for (uint16_t jump : loops_.back().breaks) {
-            code_[jump].a = endIp;
+        _code[jumpFalse].c = endIp;
+        for (uint16_t jump : _loops.back().breaks) {
+            _code[jump].a = endIp;
         }
-        loops_.pop_back();
+        _loops.pop_back();
     }
 
     void compileForC(const Stmt& stmt) {
@@ -841,11 +841,11 @@ private:
         if (hasCond) {
             jumpFalse = compileConditionJumpFalse(*stmt.expr2, stmt.line);
         }
-        loops_.push_back(Loop{});
+        _loops.push_back(Loop{});
         compileBody(stmt.body);
         uint16_t step = here();
-        for (uint16_t jump : loops_.back().continues) {
-            code_[jump].a = step;
+        for (uint16_t jump : _loops.back().continues) {
+            _code[jump].a = step;
         }
         if (stmt.expr3) {
             compileExpr(*stmt.expr3);
@@ -855,10 +855,10 @@ private:
         if (hasCond) {
             patchConditionJump(jumpFalse, end);
         }
-        for (uint16_t jump : loops_.back().breaks) {
-            code_[jump].a = end;
+        for (uint16_t jump : _loops.back().breaks) {
+            _code[jump].a = end;
         }
-        loops_.pop_back();
+        _loops.pop_back();
     }
 
     static Op binaryOp(BinaryOp op) {

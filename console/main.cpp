@@ -15,14 +15,14 @@ class Counter : public sme::IScriptObject {
 public:
     sme::Value GetProperty(sme::Engine&, std::string_view name) const override {
         if (name == "value") {
-            return sme::Value::Integer(value_);
+            return sme::Value::Integer(_value);
         }
         throw sme::RError("unknown property '" + std::string(name) + "'");
     }
 
     void SetProperty(sme::Engine&, std::string_view name, const sme::Value& incoming) override {
         if (name == "value") {
-            value_ = std::get<int>(incoming);
+            _value = std::get<int>(incoming);
             return;
         }
         throw sme::RError("unknown property '" + std::string(name) + "'");
@@ -33,14 +33,14 @@ public:
             if (args.size() != 1) {
 				return {};
             }
-            value_ += std::get<int>(args[0]);
-            return sme::Value::Integer(value_);
+            _value += std::get<int>(args[0]);
+            return sme::Value::Integer(_value);
         }
         throw sme::RError("unknown method '" + std::string(name) + "'");
     }
 
 private:
-    int value_ = 0;
+    int _value = 0;
 };
 
 int main() {

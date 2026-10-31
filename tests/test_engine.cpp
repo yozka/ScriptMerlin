@@ -35,6 +35,7 @@ sme::Engine& cachedEngine(const char* relative)
     auto& slot = cache[relative];
     if (!slot) {
         auto engine = std::make_unique<sme::Engine>();
+        engine->SetFileSystem(sme::MakeStdFileSystem());
         sme::library::InstallDefault(*engine);
 		sme::library::InstallMath(*engine);
 		sme::library::InstallGS(*engine);
@@ -82,21 +83,21 @@ public:
     ~TStruct() override { --alive; }
 
     sme::Value GetProperty(sme::Engine&, std::string_view name) const override {
-        if (name == "test_int") return sme::Value::Integer(testInt_);
-        if (name == "test_str") return sme::Value::String(testStr_);
-        if (name == "test_out") return sme::Value::String(testOut_);
+        if (name == "test_int") return sme::Value::Integer(_testInt);
+        if (name == "test_str") return sme::Value::String(_testStr);
+        if (name == "test_out") return sme::Value::String(_testOut);
         throw sme::RError("unknown property '" + std::string(name) + "'");
     }
 
     void SetProperty(sme::Engine&, std::string_view name, const sme::Value& value) override {
         if (name == "test_int" && value.IsInteger()) {
-            testInt_ = std::get<int>(value);
+            _testInt = std::get<int>(value);
             return;
         }
         if ((name == "test_str" || name == "test_out") && value.IsString()) {
             std::string text = value.ToString();
-            if (name == "test_str") testStr_ = std::move(text);
-            else testOut_ = std::move(text);
+            if (name == "test_str") _testStr = std::move(text);
+            else _testOut = std::move(text);
             return;
         }
         throw sme::RError("unknown property '" + std::string(name) + "'");
@@ -104,7 +105,7 @@ public:
 
     sme::Value Call(sme::Engine&, std::string_view name, std::span<const sme::Value> args) override {
         if (name == "run") {
-            testOut_ = testStr_ + std::to_string(testInt_);
+            _testOut = _testStr + std::to_string(_testInt);
             return sme::Value::Null();
         }
         if (name == "join" && args.size() == 2 && args[0].IsInteger() && args[1].IsString()) {
@@ -117,9 +118,9 @@ public:
     }
 
 private:
-    int testInt_ = 0;
-    std::string testStr_;
-    std::string testOut_;
+    int _testInt = 0;
+    std::string _testStr;
+    std::string _testOut;
 };
 
 int TStruct::alive = 0;
@@ -183,6 +184,7 @@ TEST(Logic, OR)
 TEST(Logic, FusedComparisonKeepsIntegerPrecision)
 {
     sme::Engine engine;
+    engine.SetFileSystem(sme::MakeStdFileSystem());
     engine.loadSource(
         "func compare_large_integers() {\n"
         "    a = 16777217;\n"
@@ -196,6 +198,7 @@ TEST(Logic, FusedComparisonKeepsIntegerPrecision)
 TEST(Parser, FnIsNotFunctionKeyword)
 {
     sme::Engine engine;
+    engine.SetFileSystem(sme::MakeStdFileSystem());
     EXPECT_THROW(engine.loadSource("fn old_function() { return 1; }"), sme::RError);
     EXPECT_NO_THROW(engine.loadSource("func new_function() { return 1; }"));
 }
@@ -1055,6 +1058,7 @@ TEST(EdgeCases, VerySmallNumbers)
 TEST(EdgeCases, IntegerArithmeticOverflow)
 {
     sme::Engine engine;
+    engine.SetFileSystem(sme::MakeStdFileSystem());
     engine.loadSource(R"(
         func add_overflow() { return 2147483647 + 1; }
         func sub_overflow() { return -2147483647 - 2; }
@@ -1100,6 +1104,7 @@ TEST(IScriptObject, test_Prop)
 {
     TStruct::alive = 0;
     sme::Engine engine;
+    engine.SetFileSystem(sme::MakeStdFileSystem());
 	sme::library::InstallDefault(engine);
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
@@ -1114,6 +1119,7 @@ TEST(IScriptObject, test_PropCall)
 {
     TStruct::alive = 0;
     sme::Engine engine;
+    engine.SetFileSystem(sme::MakeStdFileSystem());
 	sme::library::InstallDefault(engine);
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
@@ -1128,6 +1134,7 @@ TEST(IScriptObject, test_PropAdd)
 {
     TStruct::alive = 0;
     sme::Engine engine;
+    engine.SetFileSystem(sme::MakeStdFileSystem());
 	sme::library::InstallDefault(engine);
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
@@ -1144,6 +1151,7 @@ TEST(IScriptObject, test_PropSharedLifetime)
     TStruct::alive = 0;
     std::shared_ptr<TStruct> kept;
     sme::Engine engine;
+    engine.SetFileSystem(sme::MakeStdFileSystem());
 	sme::library::InstallDefault(engine);
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
@@ -1200,6 +1208,7 @@ TEST(ValueOwnership, ValuesOutliveEngineAndCalls)
     sme::Value table;
     {
         sme::Engine engine;
+        engine.SetFileSystem(sme::MakeStdFileSystem());
         engine.loadSource(R"(
             func text() { return "a string that exceeds inline storage"; }
             func table() { return [1, 2, 3]; }
@@ -1240,6 +1249,7 @@ TEST(ValueOwnership, ValuesOutliveEngineAndCalls)
 TEST(ValueOwnership, CyclicTableOwnershipIsRejected)
 {
     sme::Engine engine;
+    engine.SetFileSystem(sme::MakeStdFileSystem());
     engine.loadSource(R"(
         func cycle() {
             var table = [0];
@@ -1276,6 +1286,7 @@ TEST(IScriptObject, test_PropCompound)
 {
     TStruct::alive = 0;
     sme::Engine engine;
+    engine.SetFileSystem(sme::MakeStdFileSystem());
 	sme::library::InstallDefault(engine);
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
@@ -1583,9 +1594,21 @@ TEST(Language, Include)
     EXPECT_EQ(script.integer(), 7);
 }
 
+TEST(Language, BackslashPaths)
+{
+    std::string path = scriptPath("ver2/test_language.gs");
+    std::replace(path.begin(), path.end(), '/', '\\');
+
+    sme::Engine engine;
+    engine.SetFileSystem(sme::MakeStdFileSystem());
+    engine.load(path);
+    EXPECT_EQ(std::get<int>(engine.call("test_LangInclude")), 7);
+}
+
 TEST(Language, Scope)
 {
     sme::Engine engine;
+    engine.SetFileSystem(sme::MakeStdFileSystem());
 	sme::library::InstallDefault(engine);
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
@@ -1598,6 +1621,7 @@ TEST(Language, Scope)
 TEST(Language, Abort)
 {
     sme::Engine engine;
+    engine.SetFileSystem(sme::MakeStdFileSystem());
 	sme::library::InstallDefault(engine);
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
@@ -1609,6 +1633,7 @@ TEST(Language, Abort)
 TEST(Language, Stop)
 {
     sme::Engine engine;
+    engine.SetFileSystem(sme::MakeStdFileSystem());
 	sme::library::InstallDefault(engine);
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
@@ -1654,6 +1679,7 @@ TEST(Performance, FunctionCalls)
 TEST(Performance, WorkloadSpeed)
 {
     sme::Engine engine;
+    engine.SetFileSystem(sme::MakeStdFileSystem());
 	sme::library::InstallDefault(engine);
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);

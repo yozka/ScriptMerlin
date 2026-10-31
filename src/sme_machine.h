@@ -27,8 +27,8 @@ private:
     bool equals(const Value& lhs, const Value& rhs);
     int compare(const Value& lhs, const Value& rhs, int line);
 
-    Engine& engine_;
-    State& state_;
+    Engine& _engine;
+    State& _state;
 };
 
 }  // пространство имён sme

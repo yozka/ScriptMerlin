@@ -25,12 +25,12 @@ class RError : public std::runtime_error {
 public:
     RError(std::string message, int line = 0)
         : std::runtime_error(decorate(message, line))
-        , line_(line) {}
+        , _line(line) {}
 
-    int line() const { return line_; }
+    int line() const { return _line; }
 
 private:
-    int line_;
+    int _line;
 
     static std::string decorate(const std::string& message, int line) {
         if (line <= 0) {

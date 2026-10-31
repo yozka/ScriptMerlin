@@ -130,14 +130,17 @@ struct RunState {
     std::vector<Frame> frames;
 };
 
-struct State {
-    std::vector<Global> globals;
+struct State
+{
+	files::IFileSystem::Ptr files;
+	log::ILogging::Ptr log;
+
+	
+	std::vector<Global> globals;
     std::vector<Chunk> functions;
     std::vector<std::string> nativeNames;
     std::vector<NativeFn> natives;
     std::unordered_map<std::string, Factory> factories;
-    files::IFileSystem::Ptr files;
-    log::ILogging::Ptr log;
     std::vector<RunState> runStack;
     size_t frameSerial = 1;
     uint32_t referenceSerial = 1;
