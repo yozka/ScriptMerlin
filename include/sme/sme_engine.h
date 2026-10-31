@@ -48,6 +48,7 @@ namespace sme
 		// Логгер получает ошибки call/resume и println.
 		void SetFileSystem(files::IFileSystem::Ptr files);
 		void SetLog(log::ILogging::Ptr log);
+		void SetErrorHandle(error::IHandler::Ptr error);
 		
 	public:
 		// Натив виден скрипту как обычная функция. Повторное имя — ошибка.

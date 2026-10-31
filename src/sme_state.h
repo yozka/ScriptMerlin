@@ -3,6 +3,7 @@
 #include "sme/sme_engine.h"
 #include "sme/sme_object.h"
 #include "sme/sme_value.h"
+#include "sme/sme_error.h"
 
 #include <cstdint>
 #include <string>
@@ -134,6 +135,7 @@ struct State
 {
 	files::IFileSystem::Ptr files;
 	log::ILogging::Ptr log;
+	error::IHandler::Ptr error;
 
 	
 	std::vector<Global> globals;

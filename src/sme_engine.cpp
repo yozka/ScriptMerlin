@@ -38,7 +38,15 @@ namespace sme
 
 	void Engine::SetLog(log::ILogging::Ptr log)
 	{
+		SME_ASSERT(log, "logging system is empty");
 		_state->log = std::move(log);
+	}
+
+
+	void Engine::SetErrorHandle(error::IHandler::Ptr error)
+	{
+		SME_ASSERT(error, "error system is empty");
+		_state->error = std::move(error);
 	}
 
 

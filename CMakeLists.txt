@@ -43,6 +43,7 @@ set(mln_headers
 
 set(mln_sources
     ${CMAKE_CURRENT_SOURCE_DIR}/src/sme_engine.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/sme_error.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/sme_value.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/sme_lexer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/sme_parser.cpp
