@@ -44,13 +44,8 @@ struct Token {
     float floatValue = 0.f;
 };
 
-struct LexResult {
-    std::vector<Token> tokens;
-    error::Error::Opt error;
-};
-
 // Разобрать исходник в токены. Комментарии здесь уже не режутся,
 // если текст прошёл препроцессор: тот снимает их сам.
-LexResult lex(std::string_view source, std::string_view name);
+error::Result<std::vector<Token>> lex(std::string_view source, std::string_view name);
 
 }  // пространство имён sme

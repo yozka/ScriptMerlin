@@ -52,7 +52,7 @@ int main()
 {
     sme::Engine engine;
 
-    engine.RegisterNative("add", [](sme::Engine&, std::span<const sme::Value> args) {
+    engine.RegisterFn("add", [](sme::Engine&, std::span<const sme::Value> args) {
         if (args.size() != 2) {
             throw sme::RError("add expects 2 arguments");
         }
@@ -125,7 +125,7 @@ cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/install
 
 ## Интеграция с приложением
 
-- `Engine::RegisterNative` регистрирует C++-функцию, вызываемую из скрипта.
+- `Engine::RegisterFn` регистрирует C++-функцию, вызываемую из скрипта.
 - `Engine::bind` передаёт объект приложения как глобальную переменную скрипта. Для интеграции объект реализует интерфейс `sme::IScriptObject`.
 - `Engine::useFileSystem` позволяет задать файловую систему, используемую для загрузки скриптов и `#include`.
 - `Engine::useLog` подключает логгер для вывода и сообщений движка.

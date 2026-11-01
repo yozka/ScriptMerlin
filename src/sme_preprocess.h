@@ -29,10 +29,9 @@ namespace sme
 		std::string source;
 		std::vector<std::string> globals; // имена из пустого #def, значение null
 		std::vector<Literal> literals;
-		error::Error::Opt error;
 	};
 
-	SourceUnit PreprocessFile(const files::IFileSystem::Ptr& files, const std::string& path);
-	SourceUnit PreprocessSource(const files::IFileSystem::Ptr& files, std::string_view source, std::string_view name, const std::string& includeRoot);
+	error::Result<SourceUnit> PreprocessFile(const files::IFileSystem::Ptr& files, const std::string& path);
+	error::Result<SourceUnit> PreprocessSource(const files::IFileSystem::Ptr& files, std::string_view source, std::string_view name, const std::string& includeRoot);
 
 }

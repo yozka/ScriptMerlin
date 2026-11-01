@@ -56,7 +56,7 @@ public:
         : _source(source)
         , _name(name) {}
 
-    LexResult run() {
+    error::Result<std::vector<Token>> run() {
         if (_source.size() >= 3 &&
             static_cast<unsigned char>(_source[0]) == 0xEF &&
             static_cast<unsigned char>(_source[1]) == 0xBB &&
@@ -76,7 +76,7 @@ public:
         if (tokens.empty() || tokens.back().kind != Token::Kind::End) {
             tokens.push_back(make(Token::Kind::End));
         }
-        return LexResult{std::move(tokens), std::move(_error)};
+        return {std::move(tokens), std::move(_error)};
     }
 
 private:
@@ -539,7 +539,7 @@ private:
 
 }  // анонимное пространство имён
 
-LexResult lex(std::string_view source, std::string_view name) {
+error::Result<std::vector<Token>> lex(std::string_view source, std::string_view name) {
     return Lexer(source, name).run();
 }
 

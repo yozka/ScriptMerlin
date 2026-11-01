@@ -37,14 +37,9 @@ namespace sme
 
 	// Снимает // и /* */ до разбора директив. Строками считаются ", ' и `.
 	// Иначе URL в обратных кавычках `http://...` обрежется комментарием.
-	struct CommentResult {
-		std::string text;
-		error::Error::Opt error;
-	};
-
-	CommentResult stripComments(std::string_view source, std::string_view name) {
-		CommentResult result;
-		std::string& out = result.text;
+	error::Result<std::string> stripComments(std::string_view source, std::string_view name) {
+		error::Result<std::string> result;
+		std::string& out = result;
 		out.reserve(source.size());
 		int line = 1;
 		for (size_t i = 0; i < source.size();) {
@@ -117,24 +112,19 @@ namespace sme
 		return result;
 	}
 
-	struct ReadResult {
-		std::string text;
-		error::Error::Opt error;
-	};
-
-	ReadResult readText(const files::IFileSystem::Ptr& fileSystem, const std::string& path)
+	error::Result<std::string> readText(const files::IFileSystem::Ptr& fileSystem, const std::string& path)
 	{
 		if (!fileSystem) {
 			error::Location location;
 			location.source = path;
-			return {{}, error::Error(error::Code::PREPROCESSING_FILE_SYSTEM_EMPTY,
+			return {std::string{}, error::Error(error::Code::PREPROCESSING_FILE_SYSTEM_EMPTY,
 				"file system is empty", std::move(location))};
 		}
 		auto file = fileSystem->Open(path, files::OpenMode::Read);
 		if (!file) {
 			error::Location location;
 			location.source = path;
-			return {{}, error::Error(error::Code::PREPROCESSING_FILE_OPEN_FAILED,
+			return {std::string{}, error::Error(error::Code::PREPROCESSING_FILE_OPEN_FAILED,
 				"cannot open '" + path + "'", std::move(location))};
 		}
 		std::string text;
@@ -146,7 +136,7 @@ namespace sme
 			}
 			text.append(reinterpret_cast<const char*>(buffer), n);
 		}
-		return {std::move(text), std::nullopt};
+		return {std::move(text)};
 	}
 
 	bool startsWithWord(const std::string& text, const char* word) {
@@ -181,18 +171,18 @@ namespace sme
 			_defines.emplace("TYPE_TAB", "4");
 		}
 		
-		SourceUnit run(const std::string& file) {
+		error::Result<SourceUnit> run(const std::string& file) {
 			process(file);
 			return finish();
 		}
 		
-		SourceUnit runText(std::string_view source, std::string_view name) {
-			CommentResult comments = stripComments(source, name);
+		error::Result<SourceUnit> runText(std::string_view source, std::string_view name) {
+			auto comments = stripComments(source, name);
 			if (comments.error) {
 				_error = std::move(comments.error);
 				return finish();
 			}
-			expandStream(comments.text, std::string(name));
+			expandStream(comments, std::string(name));
 			return finish();
 		}
 		
@@ -209,8 +199,8 @@ namespace sme
 		bool _abort = false;
 		std::string _out;
 		
-		SourceUnit finish() const {
-			return SourceUnit{_out, _globals, _literals, _error};
+		error::Result<SourceUnit> finish() const {
+			return {SourceUnit{_out, _globals, _literals}, _error};
 		}
 
 		void addError(error::Code code, std::string message, const std::string& source, int line = 0) {
@@ -251,19 +241,19 @@ namespace sme
 			}
 			const std::string previous = _current;
 			_current = file;
-			ReadResult read = readText(_files, file);
+			auto read = readText(_files, file);
 			if (read.error) {
 				_error = std::move(read.error.value());
 				_current = previous;
 				return;
 			}
-			CommentResult comments = stripComments(read.text, file);
+			auto comments = stripComments(read, file);
 			if (comments.error) {
 				_error = std::move(comments.error);
 				_current = previous;
 				return;
 			}
-			expandStream(comments.text, file);
+			expandStream(comments, file);
 			_current = previous;
 		}
 		
@@ -371,7 +361,7 @@ namespace sme
 		// Выражение вроде 1+2 литералом не является: глобал остаётся null,
 		// а в текст скрипта по-прежнему вставляется исходная строка.
 		void rememberLiteral(const std::string& name, const std::string& value, const std::string& file, int lineNo) {
-			LexResult lexed = lex(value, file);
+			auto lexed = lex(value, file);
 			if (lexed.error) {
 				error::Location location = lexed.error->location();
 				location.line = lineNo;
@@ -379,7 +369,7 @@ namespace sme
 					"invalid define '" + name + "': " + lexed.error->message(), std::move(location));
 				return;
 			}
-			const std::vector<Token>& tokens = lexed.tokens;
+			const std::vector<Token>& tokens = lexed;
 			Literal literal;
 			literal.name = name;
 			literal.kind = Literal::Kind::Null;
@@ -548,13 +538,13 @@ namespace sme
 
 	}  // анонимное пространство имён
 
-	SourceUnit PreprocessFile(const files::IFileSystem::Ptr& files, const std::string& path)
+	error::Result<SourceUnit> PreprocessFile(const files::IFileSystem::Ptr& files, const std::string& path)
 	{
 		SME_ASSERT(files, "file system is empty");
 		return Preprocessor(files, ParentPath(path)).run(path);
 	}
 
-	SourceUnit PreprocessSource(const files::IFileSystem::Ptr& files, std::string_view source, std::string_view name, const std::string& includeRoot)
+	error::Result<SourceUnit> PreprocessSource(const files::IFileSystem::Ptr& files, std::string_view source, std::string_view name, const std::string& includeRoot)
 	{
 		SME_ASSERT(files, "file system is empty");
 		return Preprocessor(files, includeRoot).runText(source, name);

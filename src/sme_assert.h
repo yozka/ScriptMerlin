@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdio>
+#include <string>
 
 #if SME_ENABLE_ASSERTS
 #ifdef NDEBUG
@@ -29,7 +30,7 @@
     SME_ASSERT_SELECT(__VA_ARGS__, SME_ASSERT_WITH_MESSAGE, SME_ASSERT_WITHOUT_MESSAGE, unused)(__VA_ARGS__)
 #define SME_ASSERT_FAIL(message) \
     do { \
-        std::fprintf(stderr, "%s\n", (message)); \
+        std::fprintf(stderr, "%s\n", std::string(message).c_str()); \
         assert(false); \
     } while (false)
 #else

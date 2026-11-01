@@ -22,7 +22,7 @@ public:
         : _tokens(std::move(tokens))
         , _name(std::move(name)) {}
 
-    ParseResult run() {
+    error::Result<Program> run() {
         Program program;
         while (!check(Token::Kind::End) && !_error) {
             skipNewlines();
@@ -44,7 +44,7 @@ public:
             report(error::Code::PARSE_EXPECTED_FUNCTION_OR_DECLARATION,
                 "expected a function or declaration in " + _name + ", got " + spell(peek()), peek().line);
         }
-        return ParseResult{std::move(program), std::move(_error)};
+        return {std::move(program), std::move(_error)};
     }
 
 private:
@@ -886,12 +886,12 @@ private:
 
 }  // анонимное пространство имён
 
-ParseResult parse(std::string_view source, std::string_view name) {
-    LexResult lexed = lex(source, name);
+error::Result<Program> parse(std::string_view source, std::string_view name) {
+    auto lexed = lex(source, name);
     if (lexed.error) {
-        return ParseResult{Program{}, std::move(lexed.error)};
+        return {Program{}, std::move(lexed.error)};
     }
-    return Parser(std::move(lexed.tokens), std::string(name)).run();
+    return Parser(std::move(lexed), std::string(name)).run();
 }
 
 }  // пространство имён sme

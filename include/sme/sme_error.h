@@ -7,6 +7,7 @@
 #include <optional>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace sme::error
@@ -169,6 +170,22 @@ namespace sme::error
 		std::string _message;
 		Location _location;
 		std::vector<StackFrame> _stack;
+	};
+
+
+	template<typename T>
+	struct Result : public T
+	{
+		using Base = T;
+
+		Error::Opt error;
+
+		Result() = default;
+		Result(T value, Error::Opt resultError = {})
+			: T(std::move(value))
+			, error(std::move(resultError))
+		{
+		}
 	};
 
 

@@ -52,13 +52,13 @@ namespace sme
 		
 	public:
 		// Натив виден скрипту как обычная функция. Повторное имя — ошибка.
-		void RegisterNative(std::string name, NativeFn function);
+		void RegisterFn(std::string name, NativeFn function);
 		
 		// newobj<Имя>() в скрипте ищет фабрику, зарегистрированную здесь.
 		void RegisterFactory(std::string name, std::function<std::shared_ptr<IScriptObject>()> factory);
 		
 		// Глобал с этим именем начинает указывать на объект хоста.
-		void bind(std::string name, std::shared_ptr<IScriptObject> object);
+		void Bind(std::string name, std::shared_ptr<IScriptObject> object);
 		
 		
 	public:
@@ -71,7 +71,7 @@ namespace sme
 		// Если value — ссылка, вернуть то, на что она указывает. Иначе само value.
 		// Протухшая ссылка читается как null, без исключения.
 		Value follow(const Value& value) const;
-		void resizeTable(const Value& table, size_t size);
+		void ResizeTable(const Value& table, size_t size);
 		
 		// Подменяет таблицу функций. Уже существующие глобалы сохраняют значения;
 		// #def того же имени значение перезаписывает. Пока на стеке есть вызов, Load

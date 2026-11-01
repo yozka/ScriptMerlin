@@ -943,8 +943,8 @@ private:
 
 }  // анонимное пространство имён
 
-CompileResult compile(const Program& program, const CompileEnv& env, std::string_view source) {
-    CompileResult result;
+error::Result<std::vector<Chunk>> compile(const Program& program, const CompileEnv& env, std::string_view source) {
+    error::Result<std::vector<Chunk>> result;
     std::unordered_map<std::string, uint16_t> functions;
     for (const Function& function : program.functions) {
         if (functions.contains(function.name)) {
@@ -962,14 +962,14 @@ CompileResult compile(const Program& program, const CompileEnv& env, std::string
     }
 
     if (result.error) return result;
-    result.functions.reserve(program.functions.size());
+    result.reserve(program.functions.size());
     for (const Function& function : program.functions) {
         if (result.error) break;
         if (auto chunk = FunctionCompiler(function, functions, env, source, result.error).run()) {
-            result.functions.push_back(std::move(*chunk));
+            result.push_back(std::move(*chunk));
         }
     }
-    if (result.error) result.functions.clear();
+    if (result.error) result.clear();
     return result;
 }
 

@@ -18,13 +18,8 @@ struct CompileEnv {
     std::unordered_map<std::string, uint16_t> globals;
 };
 
-struct CompileResult {
-    std::vector<Chunk> functions;
-    error::Error::Opt error;
-};
-
 // Два прохода на функцию: сначала собрать локалы (включая неявные из присваиваний),
 // потом породить регистровый байткод. Размер кадра после этого фиксирован.
-CompileResult compile(const Program& program, const CompileEnv& env, std::string_view source);
+error::Result<std::vector<Chunk>> compile(const Program& program, const CompileEnv& env, std::string_view source);
 
 }  // пространство имён sme

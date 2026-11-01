@@ -64,26 +64,30 @@ namespace sme
 	}
 
 
-	void Engine::RegisterNative(std::string name, NativeFn function)
+	void Engine::RegisterFn(std::string name, NativeFn function)
 	{
 		if (!function) {
-			throw RError("native '" + name + "' is empty");
+			SME_ASSERT_FAIL("native '" + name + "' is empty");
+			return;
 		}
 		if (std::find(_state->nativeNames.begin(), _state->nativeNames.end(), name) != _state->nativeNames.end()) {
-			throw RError("native '" + name + "' is already registered");
+			SME_ASSERT_FAIL("native '" + name + "' is already registered");
+			return;
 		}
 		_state->nativeNames.push_back(std::move(name));
 		_state->natives.push_back(std::move(function));
 	}
 
 
-	void Engine::bind(std::string name, std::shared_ptr<IScriptObject> object) {
+	void Engine::Bind(std::string name, std::shared_ptr<IScriptObject> object) {
 		if (!object) {
-			throw RError("bind expects an object");
+			SME_ASSERT_FAIL("bind expects an object");
+			return;
 		}
 		for (const Chunk& chunk : _state->functions) {
 			if (chunk.name == name) {
-				throw RError("global '" + name + "' shadows function '" + name + "'");
+				SME_ASSERT_FAIL("global '" + name + "' shadows function '" + name + "'");
+				return;
 			}
 		}
 		Value value(std::move(object));
@@ -96,15 +100,25 @@ namespace sme
 		_state->globals.push_back(Global{std::move(name), std::move(value)});
 	}
 
+
+	void Engine::RegisterFactory(std::string name, std::function<std::shared_ptr<IScriptObject>()> factory)
+	{
+		if (!factory) {
+			SME_ASSERT_FAIL("factory '" + name + "' is empty");
+			return;
+		}
+		_state->factories[std::move(name)] = std::move(factory);
+	}
+
 	// Повторный load не сбрасывает уже созданные глобалы: addGlobal выходит,
 	// если имя есть. #def проходит отдельным циклом и значение перезаписывает.
 	error::Error::Opt Engine::CompileUnit(const SourceUnit& unit, std::string_view name) {
-		ParseResult parsed = parse(unit.source, name);
+		auto parsed = parse(unit.source, name);
 		if (parsed.error) {
 			return std::move(parsed.error);
 		}
 		
-		Program& program = parsed.program;
+		Program& program = parsed;
 		auto addGlobal = [&](const std::string& global, Value value) {
 			for (const Global& existing : _state->globals) {
 				if (existing.name == global) {
@@ -155,11 +169,11 @@ namespace sme
 			env.globals.emplace(_state->globals[index].name, index);
 		}
 		_state->sourceName = std::string(name);
-		CompileResult compiled = compile(program, env, name);
+		auto compiled = compile(program, env, name);
 		if (compiled.error) {
 			return std::move(compiled.error);
 		}
-		_state->functions = std::move(compiled.functions);
+		_state->functions = std::move(compiled);
 		return std::nullopt;
 	}
 
@@ -171,7 +185,7 @@ namespace sme
 			location.source = path;
 			return error::Error(error::Code::ENGINE_LOAD_DURING_ACTIVE_CALL, "cannot load while a script call is active", std::move(location));
 		}
-		SourceUnit unit = PreprocessFile(_state->files, path);
+		auto unit = PreprocessFile(_state->files, path);
 		if (unit.error) {
 			return std::move(unit.error);
 		}
@@ -187,7 +201,7 @@ namespace sme
 			return error::Error(error::Code::ENGINE_LOAD_DURING_ACTIVE_CALL,
 				"cannot load while a script call is active", std::move(location));
 		}
-		SourceUnit unit = PreprocessSource(_state->files, source, name, {});
+		auto unit = PreprocessSource(_state->files, source, name, {});
 		if (unit.error) {
 			return std::move(unit.error);
 		}
@@ -232,9 +246,11 @@ namespace sme
 		return chunk.code[frame.ip - 1].op == Op::Stop;
 	}
 
-	Value Engine::resume() {
+	Value Engine::resume()
+	{
 		if (!stopped()) {
-			throw RError("script is not stopped");
+			SME_ASSERT_FAIL("script is not stopped");
+			return {};
 		}
 		try {
 			return Machine(*this, *_state).resume();
@@ -253,12 +269,6 @@ namespace sme
 		return _state->globals[index].value;
 	}
 
-	void Engine::RegisterFactory(std::string name, std::function<std::shared_ptr<IScriptObject>()> factory) {
-		if (!factory) {
-			throw RError("factory '" + name + "' is empty");
-		}
-		_state->factories[std::move(name)] = std::move(factory);
-	}
 
 	std::optional<size_t> Engine::findFunction(std::string_view name) const {
 		for (size_t index = 0; index < _state->functions.size(); ++index) {
@@ -318,10 +328,12 @@ namespace sme
 		return frame.regs[local.slot];
 	}
 
-	void Engine::resizeTable(const Value& table, size_t size) {
+	void Engine::ResizeTable(const Value& table, size_t size)
+	{
 		Value target = follow(table);
 		if (!target.IsTable()) {
-			throw RError("tabresize expects a table");
+			SME_ASSERT_FAIL("tabresize expects a table");
+			return;
 		}
 		std::get<TableHandle>(target)->resize(size, Value::Integer(0));
 	}

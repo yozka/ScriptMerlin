@@ -7,13 +7,8 @@
 
 namespace sme {
 
-struct ParseResult {
-    Program program;
-    error::Error::Opt error;
-};
-
 // Рекурсивный спуск: программа = глобалы и функции.
 // Перевод строки внутри (...), [...] и {...} в выражениях не заканчивает оператор.
-ParseResult parse(std::string_view source, std::string_view name);
+error::Result<Program> parse(std::string_view source, std::string_view name);
 
 }  // пространство имён sme
