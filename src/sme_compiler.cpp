@@ -8,6 +8,8 @@
 // откатывается, а слоты перед оператором обнуляются.
 
 #include <unordered_map>
+#include <optional>
+#include <utility>
 
 namespace sme {
 namespace {
@@ -16,22 +18,31 @@ class FunctionCompiler {
 public:
     FunctionCompiler(const Function& function,
                      const std::unordered_map<std::string, uint16_t>& functions,
-                     const CompileEnv& env)
+                     const CompileEnv& env,
+                     std::string_view source,
+                     error::Error::Opt& error)
         : _function(function)
         , _functions(functions)
-        , _env(env) {}
+        , _env(env)
+        , _source(source)
+        , _error(error) {}
 
-    Chunk run() {
+    std::optional<Chunk> run() {
         for (const std::string& param : _function.params) {
+            if (_error) break;
             declare(param, _function.line);
         }
         for (const auto& stmt : _function.body) {
+            if (_error) break;
             collect(*stmt);
         }
+        if (_failed) return std::nullopt;
         _watermark = static_cast<uint16_t>(_locals.size());
         _regCount = _watermark;
         compileBody(_function.body);
+        if (_failed) return std::nullopt;
         finishLabels();
+        if (_failed) return std::nullopt;
         uint16_t result = allocTemp();
         emit(Op::LoadConst, result, addConst(std::monostate{}), 0, 0, 0, _function.line);
         emit(Op::Return, result, 0, 0, 0, 0, _function.line);
@@ -54,6 +65,9 @@ private:
     const Function& _function;
     const std::unordered_map<std::string, uint16_t>& _functions;
     const CompileEnv& _env;
+    std::string _source;
+    error::Error::Opt& _error;
+    bool _failed = false;
     std::unordered_map<std::string, uint16_t> _locals;
     std::unordered_map<std::string, uint16_t> _labels;
     std::unordered_map<std::string, std::vector<uint16_t>> _pendingGotos;
@@ -63,12 +77,24 @@ private:
     uint16_t _watermark = 0;
     uint16_t _regCount = 0;
 
+    void report(error::Code code, std::string message, int line = 0) {
+        _failed = true;
+        if (_error) return;
+        error::Location location;
+        location.source = _source;
+        location.function = _function.name;
+        location.line = line;
+        _error.emplace(code, std::move(message), std::move(location));
+    }
+
     void declare(const std::string& name, int line) {
         if (_locals.contains(name)) {
-            throw RError("duplicate variable '" + name + "'", line);
+            report(error::Code::COMPILATION_DUPLICATE_VARIABLE, "duplicate variable '" + name + "'", line);
+            return;
         }
         if (_locals.size() >= 65535) {
-            throw RError("too many local variables", line);
+            report(error::Code::COMPILATION_TOO_MANY_LOCAL_VARIABLES, "too many local variables", line);
+            return;
         }
         _locals.emplace(name, static_cast<uint16_t>(_locals.size()));
     }
@@ -83,6 +109,7 @@ private:
     }
 
     void collectExpr(const Expr& expr) {
+        if (_error) return;
         if ((expr.kind == Expr::Kind::Assign || expr.kind == Expr::Kind::Modify) && !expr.kids.empty() &&
             expr.kids[0]->kind == Expr::Kind::Name) {
             note(expr.kids[0]->text, expr.kids[0]->line);
@@ -101,6 +128,7 @@ private:
     // Второй var с тем же именем — ошибка. Параметр и var с тем же именем тоже.
     // Присваивание в новое имя локал создаёт, var для этого не обязателен.
     void collect(const Stmt& stmt) {
+        if (_error) return;
         if (stmt.kind == Stmt::Kind::Var) {
             declare(stmt.name, stmt.line);
         }
@@ -116,7 +144,8 @@ private:
 
     uint16_t allocTemp() {
         if (_watermark == 65535) {
-            throw RError("too many registers", _function.line);
+            report(error::Code::COMPILATION_TOO_MANY_REGISTERS, "too many registers", _function.line);
+            return 0;
         }
         uint16_t reg = _watermark++;
         if (_watermark > _regCount) {
@@ -127,7 +156,8 @@ private:
 
     uint16_t addConst(Constant constant) {
         if (_constants.size() >= 65535) {
-            throw RError("too many constants", _function.line);
+            report(error::Code::COMPILATION_TOO_MANY_CONSTANTS, "too many constants", _function.line);
+            return 0;
         }
         _constants.push_back(std::move(constant));
         return static_cast<uint16_t>(_constants.size() - 1);
@@ -135,7 +165,8 @@ private:
 
     uint16_t emit(Op op, uint16_t a, uint16_t b, uint16_t c, uint16_t d, uint16_t e, int line) {
         if (_code.size() >= 65535) {
-            throw RError("function is too large", line);
+            report(error::Code::COMPILATION_FUNCTION_TOO_LARGE, "function is too large", line);
+            return 0;
         }
         Instruction ins;
         ins.op = op;
@@ -218,7 +249,8 @@ private:
         case Expr::Kind::Query:
             return compileQuery(expr);
         }
-        throw RError("internal expression", expr.line);
+        report(error::Code::COMPILATION_INTERNAL_EXPRESSION, "internal expression", expr.line);
+        return 0;
     }
 
     // ?имя. Неизвестное имя — 0. Иначе код типа значения. Для непереданного
@@ -248,7 +280,9 @@ private:
             return dest;
         }
         if (_functions.contains(expr.text) || _env.natives.contains(expr.text)) {
-            throw RError("function '" + expr.text + "' must be called", expr.line);
+            report(error::Code::COMPILATION_FUNCTION_MUST_BE_CALLED,
+                "function '" + expr.text + "' must be called", expr.line);
+            return 0;
         }
         uint16_t dest = allocTemp();
         emit(Op::LoadConst, dest, addConst(std::monostate{}), 0, 0, 0, expr.line);
@@ -331,7 +365,8 @@ private:
             emit(Op::CallMethod, dest, object, name, base, argc, expr.line);
             return dest;
         }
-        throw RError("expression is not a function", expr.line);
+        report(error::Code::COMPILATION_EXPRESSION_NOT_CALLABLE, "expression is not a function", expr.line);
+        return 0;
     }
 
     uint16_t compileIndex(const Expr& expr) {
@@ -432,7 +467,9 @@ private:
             if (auto it = _env.globals.find(target.text); it != _env.globals.end()) {
                 return Place{Place::Kind::Global, it->second, 0};
             }
-            throw RError("unknown variable '" + target.text + "'", target.line);
+            report(error::Code::COMPILATION_UNKNOWN_VARIABLE,
+                "unknown variable '" + target.text + "'", target.line);
+            return {};
         }
         if (target.kind == Expr::Kind::Index || target.kind == Expr::Kind::CharIndex) {
             Place place;
@@ -450,7 +487,8 @@ private:
         if (target.kind == Expr::Kind::Call) {
             return Place{Place::Kind::Ref, compileExpr(target), 0};
         }
-        throw RError(invalid, target.line);
+        report(error::Code::COMPILATION_INVALID_ASSIGNMENT_TARGET, invalid, target.line);
+        return {};
     }
 
     uint16_t loadPlace(const Place& place, int line) {
@@ -479,7 +517,8 @@ private:
             return dest;
         }
         }
-        throw RError("internal assignment", line);
+        report(error::Code::COMPILATION_INTERNAL_ASSIGNMENT, "internal assignment", line);
+        return 0;
     }
 
     void storePlace(const Place& place, uint16_t value, int line) {
@@ -503,7 +542,7 @@ private:
             emit(Op::StoreRef, place.primary, value, 0, 0, 0, line);
             return;
         }
-        throw RError("internal assignment", line);
+        report(error::Code::COMPILATION_INTERNAL_ASSIGNMENT, "internal assignment", line);
     }
 
     void store(const Expr& target, uint16_t value, int line) {
@@ -614,7 +653,9 @@ private:
             return dest;
         }
         if (target.kind != Expr::Kind::Name) {
-            throw RError("address expects a variable", expr.line);
+            report(error::Code::COMPILATION_ADDRESS_EXPECTS_VARIABLE,
+                "address expects a variable", expr.line);
+            return 0;
         }
         uint16_t dest = allocTemp();
         if (auto it = _locals.find(target.text); it != _locals.end()) {
@@ -625,7 +666,9 @@ private:
             emit(Op::MakeRefGlobal, dest, it->second, 0, 0, 0, expr.line);
             return dest;
         }
-        throw RError("unknown variable '" + target.text + "'", target.line);
+        report(error::Code::COMPILATION_UNKNOWN_VARIABLE,
+            "unknown variable '" + target.text + "'", target.line);
+        return 0;
     }
 
     uint16_t compileDeref(const Expr& expr) {
@@ -668,12 +711,18 @@ private:
             break;
         }
         case Stmt::Kind::Break: {
-            if (_loops.empty()) throw RError("break outside of a loop", stmt.line);
+            if (_loops.empty()) {
+                report(error::Code::COMPILATION_BREAK_OUTSIDE_LOOP, "break outside of a loop", stmt.line);
+                break;
+            }
             _loops.back().breaks.push_back(emit(Op::Jump, 0, 0, 0, 0, 0, stmt.line));
             break;
         }
         case Stmt::Kind::Continue: {
-            if (_loops.empty()) throw RError("continue outside of a loop", stmt.line);
+            if (_loops.empty()) {
+                report(error::Code::COMPILATION_CONTINUE_OUTSIDE_LOOP, "continue outside of a loop", stmt.line);
+                break;
+            }
             _loops.back().continues.push_back(emit(Op::Jump, 0, 0, 0, 0, 0, stmt.line));
             break;
         }
@@ -703,13 +752,16 @@ private:
         for (const auto& stmt : body) {
             _watermark = base;
             compileStmt(*stmt);
+            if (_failed) break;
         }
         _watermark = base;
     }
 
     void compileLabel(const Stmt& stmt) {
         if (_labels.contains(stmt.name)) {
-            throw RError("duplicate label '" + stmt.name + "'", stmt.line);
+            report(error::Code::COMPILATION_DUPLICATE_LABEL,
+                "duplicate label '" + stmt.name + "'", stmt.line);
+            return;
         }
         _labels.emplace(stmt.name, here());
         for (uint16_t jump : _pendingGotos[stmt.name]) {
@@ -730,7 +782,8 @@ private:
     void finishLabels() {
         for (const auto& [name, jumps] : _pendingGotos) {
             if (!jumps.empty()) {
-                throw RError("unknown label '" + name + "'", _function.line);
+                report(error::Code::COMPILATION_UNKNOWN_LABEL,
+                    "unknown label '" + name + "'", _function.line);
             }
         }
     }
@@ -861,7 +914,7 @@ private:
         _loops.pop_back();
     }
 
-    static Op binaryOp(BinaryOp op) {
+    Op binaryOp(BinaryOp op) {
         switch (op) {
         case BinaryOp::Add: return Op::Add;
         case BinaryOp::Sub: return Op::Sub;
@@ -881,29 +934,43 @@ private:
         case BinaryOp::Shr: return Op::Shr;
         case BinaryOp::And:
         case BinaryOp::Or:
-            throw RError("internal operator");
+            break;
         }
-        throw RError("internal operator");
+        report(error::Code::COMPILATION_INTERNAL_OPERATOR, "internal operator", _function.line);
+        return Op::Add;
     }
 };
 
 }  // анонимное пространство имён
 
-std::vector<Chunk> compile(const Program& program, const CompileEnv& env) {
+CompileResult compile(const Program& program, const CompileEnv& env, std::string_view source) {
+    CompileResult result;
     std::unordered_map<std::string, uint16_t> functions;
     for (const Function& function : program.functions) {
         if (functions.contains(function.name)) {
-            throw RError("duplicate function '" + function.name + "'", function.line);
+            if (!result.error) {
+                error::Location location;
+                location.source = source;
+                location.function = function.name;
+                location.line = function.line;
+                result.error.emplace(error::Code::COMPILATION_DUPLICATE_FUNCTION,
+                    "duplicate function '" + function.name + "'", std::move(location));
+            }
+            break;
         }
         functions.emplace(function.name, static_cast<uint16_t>(functions.size()));
     }
 
-    std::vector<Chunk> chunks;
-    chunks.reserve(program.functions.size());
+    if (result.error) return result;
+    result.functions.reserve(program.functions.size());
     for (const Function& function : program.functions) {
-        chunks.push_back(FunctionCompiler(function, functions, env).run());
+        if (result.error) break;
+        if (auto chunk = FunctionCompiler(function, functions, env, source, result.error).run()) {
+            result.functions.push_back(std::move(*chunk));
+        }
     }
-    return chunks;
+    if (result.error) result.functions.clear();
+    return result;
 }
 
 }  // пространство имён sme

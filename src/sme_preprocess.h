@@ -1,7 +1,9 @@
 #pragma once
 
+#include "sme/sme_error.h"
 #include "sme/sme_filesystem.h"
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -27,6 +29,7 @@ namespace sme
 		std::string source;
 		std::vector<std::string> globals; // имена из пустого #def, значение null
 		std::vector<Literal> literals;
+		error::Error::Opt error;
 	};
 
 	SourceUnit PreprocessFile(const files::IFileSystem::Ptr& files, const std::string& path);

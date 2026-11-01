@@ -153,6 +153,9 @@ namespace sme::error
 	class Error
 	{
 	public:
+		using Opt = std::optional<Error>;
+
+	public:
 		Error(Code code, std::string message, Location location = {},
 			  std::vector<StackFrame> stack = {});
 		

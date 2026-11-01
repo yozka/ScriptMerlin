@@ -31,7 +31,7 @@ namespace sme
 	//       return n + 39;
 	//   }
 	//
-	// Объекты хоста и нативы нужно привязать до load() / loadSource().
+	// Объекты хоста и нативы нужно привязать до Load() / LoadSource().
 	class Engine
 	{
 	public:
@@ -75,10 +75,12 @@ namespace sme
 		Value makeTable(std::vector<Value> items);
 		
 		// Подменяет таблицу функций. Уже существующие глобалы сохраняют значения;
-		// #def того же имени значение перезаписывает. Пока на стеке есть вызов, load
+		// #def того же имени значение перезаписывает. Пока на стеке есть вызов, Load
 		// отказывается: старые кадры смотрели бы в новую таблицу функций.
-		void load(const std::string& path);
-		void loadSource(std::string_view source, std::string_view name = "script");
+		// Ошибка загрузки/компиляции возвращается; при наличии ошибки Engine
+		// считается непригодным и не должен использоваться дальше.
+		error::Error::Opt Load(const std::string& path);
+		error::Error::Opt LoadSource(std::string_view source, std::string_view name = "script");
 		
 		// Недостающие аргументы приходят как null, лишние отбрасываются — как при
 		// вызове скрипт→скрипт. Результат владеет данными и может храниться дольше Engine.
@@ -93,8 +95,7 @@ namespace sme
 		void Error(const error::Code code, const std::string& text);
 		
 	private:
-		void compileUnit(const struct SourceUnit& unit, std::string_view name);
-		void rejectActiveCall() const;
+		error::Error::Opt CompileUnit(const struct SourceUnit& unit, std::string_view name);
 		Value invoke(size_t index, std::span<const Value> args);
 		std::unique_ptr<State> _state;
 	};

@@ -1,6 +1,9 @@
 #pragma once
 
+#include "sme/sme_error.h"
+
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -13,6 +16,7 @@ namespace sme {
 struct Token {
     enum class Kind {
         End,
+        Invalid,
         Newline,
         Identifier,
         Int,
@@ -40,8 +44,13 @@ struct Token {
     float floatValue = 0.f;
 };
 
+struct LexResult {
+    std::vector<Token> tokens;
+    error::Error::Opt error;
+};
+
 // Разобрать исходник в токены. Комментарии здесь уже не режутся,
 // если текст прошёл препроцессор: тот снимает их сам.
-std::vector<Token> lex(std::string_view source, std::string_view name);
+LexResult lex(std::string_view source, std::string_view name);
 
 }  // пространство имён sme

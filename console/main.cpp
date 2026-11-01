@@ -51,13 +51,17 @@ int main() {
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
     engine.bind("counter", std::make_shared<Counter>());
-    engine.loadSource(R"mln(
+    const auto error = engine.LoadSource(R"mln(
 func main() {
     counter.value = 10;
     counter.add(32);
     return counter.value + abs(-1);
 }
 )mln");
+    if (error) {
+        std::cerr << error->message() << '\n';
+        return 1;
+    }
 
     const sme::Value result = engine.call("main");
     std::cout << result.ToString() << "\n";

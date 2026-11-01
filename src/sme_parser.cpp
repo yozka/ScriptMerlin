@@ -1,5 +1,6 @@
 #include "sme_parser.h"
 
+#include "sme_lexer.h"
 #include "sme/sme_error.h"
 
 // Парсер. Рекурсивный спуск от программы к выражениям.
@@ -21,9 +22,9 @@ public:
         : _tokens(std::move(tokens))
         , _name(std::move(name)) {}
 
-    Program run() {
+    ParseResult run() {
         Program program;
-        while (!check(Token::Kind::End)) {
+        while (!check(Token::Kind::End) && !_error) {
             skipNewlines();
             if (check(Token::Kind::End)) {
                 break;
@@ -32,9 +33,7 @@ public:
                 continue;
             }
             if (check(Token::Kind::KwFunc)) {
-                if (forwardDeclaration()) {
-                    continue;
-                }
+                if (forwardDeclaration()) continue;
                 program.functions.push_back(parseFunction());
                 continue;
             }
@@ -42,9 +41,10 @@ public:
                 parseGlobalDecl(program);
                 continue;
             }
-            throw RError("expected a function or declaration in " + _name + ", got " + spell(peek()), peek().line);
+            report(error::Code::PARSE_EXPECTED_FUNCTION_OR_DECLARATION,
+                "expected a function or declaration in " + _name + ", got " + spell(peek()), peek().line);
         }
-        return program;
+        return ParseResult{std::move(program), std::move(_error)};
     }
 
 private:
@@ -55,6 +55,15 @@ private:
     // _group — круглые и квадратные, _braceExpr — фигурные в выражении (таблица).
     int _group = 0;
     int _braceExpr = 0;
+    error::Error::Opt _error;
+
+    void report(error::Code code, std::string message, int line) {
+        if (_error) return;
+        error::Location location;
+        location.source = _name;
+        location.line = line;
+        _error.emplace(code, std::move(message), std::move(location));
+    }
 
     const Token& peek() {
         if (_group > 0 || _braceExpr > 0) {
@@ -86,7 +95,12 @@ private:
 
     Token consume(Token::Kind kind, const std::string& what) {
         if (!check(kind)) {
-            throw RError("expected " + what + " in " + _name + ", got " + spell(peek()), peek().line);
+            report(error::Code::PARSE_EXPECTED_TOKEN,
+                "expected " + what + " in " + _name + ", got " + spell(peek()), peek().line);
+            Token missing;
+            missing.kind = kind;
+            missing.line = peek().line;
+            return missing;
         }
         account(kind);
         return _tokens[_pos++];
@@ -145,7 +159,8 @@ private:
         if (check(Token::Kind::Newline) || check(Token::Kind::RBrace) || check(Token::Kind::End) || check(Token::Kind::KwElse)) {
             return;
         }
-        throw RError("expected end of statement in " + _name + ", got " + spell(peek()), peek().line);
+        report(error::Code::PARSE_EXPECTED_END_OF_STATEMENT,
+            "expected end of statement in " + _name + ", got " + spell(peek()), peek().line);
     }
 
     void rememberGlobal(Program& program, const std::string& global, GlobalKind kind) {
@@ -165,7 +180,13 @@ private:
             Token name = consume(Token::Kind::Identifier, "name");
             rememberGlobal(program, name.text, kind);
             if (check(Token::Kind::Assign)) {
-                throw RError("global initializers are not supported; use #def", peek().line);
+                report(error::Code::PARSE_GLOBAL_INITIALIZER_UNSUPPORTED,
+                    "global initializers are not supported; use #def", peek().line);
+                while (!check(Token::Kind::Newline) && !check(Token::Kind::Semicolon) &&
+                       !check(Token::Kind::End)) {
+                    ++_pos;
+                }
+                break;
             }
         } while (match(Token::Kind::Comma));
         finishStmt();
@@ -192,7 +213,7 @@ private:
     std::vector<std::unique_ptr<Stmt>> parseBlock() {
         consume(Token::Kind::LBrace, "'{'");
         std::vector<std::unique_ptr<Stmt>> body;
-        while (!check(Token::Kind::RBrace) && !check(Token::Kind::End)) {
+        while (!check(Token::Kind::RBrace) && !check(Token::Kind::End) && !_error) {
             skipNewlines();
             if (check(Token::Kind::RBrace) || check(Token::Kind::End)) {
                 break;
@@ -203,7 +224,8 @@ private:
             size_t before = _pos;
             body.push_back(parseStmt());
             if (_pos == before) {
-                throw RError("parser did not advance in " + _name, peek().line);
+                report(error::Code::PARSE_NO_PROGRESS, "parser did not advance in " + _name, peek().line);
+                if (!check(Token::Kind::End)) ++_pos;
             }
         }
         consume(Token::Kind::RBrace, "'}'");
@@ -407,7 +429,8 @@ private:
         auto left = parseTernary();
         if (auto form = asAssign(peek().kind)) {
             if (!assignable(*left)) {
-                throw RError("invalid assignment target in " + _name, left->line);
+                report(error::Code::PARSE_INVALID_ASSIGNMENT_TARGET,
+                    "invalid assignment target in " + _name, left->line);
             }
             int line = peek().line;
             ++_pos;
@@ -641,7 +664,8 @@ private:
         Token token = peek();
         if (match(Token::Kind::Int)) {
             if (token.text == "2147483648") {
-                throw RError("integer literal out of range in " + _name, token.line);
+                report(error::Code::PARSE_INTEGER_OUT_OF_RANGE,
+                    "integer literal out of range in " + _name, token.line);
             }
             auto expr = makeExpr(Expr::Kind::Int, token.line);
             expr->intValue = token.intValue;
@@ -746,7 +770,12 @@ private:
             consume(Token::Kind::RBracket, "']'");
             return expr;
         }
-        throw RError("expected expression in " + _name + ", got " + spell(token), token.line);
+        report(error::Code::PARSE_EXPECTED_EXPRESSION,
+            "expected expression in " + _name + ", got " + spell(token), token.line);
+        if (!check(Token::Kind::End) && !check(Token::Kind::Newline) && !check(Token::Kind::RBrace)) {
+            ++_pos;
+        }
+        return makeExpr(Expr::Kind::Null, token.line);
     }
 
     // Куда можно присваивать. Call в этом списке — не «результат вызова»,
@@ -773,6 +802,7 @@ private:
     static std::string spell(const Token& token) {
         switch (token.kind) {
         case Token::Kind::End: return "end";
+        case Token::Kind::Invalid: return "invalid token";
         case Token::Kind::Newline: return "newline";
         case Token::Kind::Identifier: return "identifier '" + token.text + "'";
         case Token::Kind::Int: return "integer";
@@ -856,8 +886,12 @@ private:
 
 }  // анонимное пространство имён
 
-Program parse(std::string_view source, std::string_view name) {
-    return Parser(lex(source, name), std::string(name)).run();
+ParseResult parse(std::string_view source, std::string_view name) {
+    LexResult lexed = lex(source, name);
+    if (lexed.error) {
+        return ParseResult{Program{}, std::move(lexed.error)};
+    }
+    return Parser(std::move(lexed.tokens), std::string(name)).run();
 }
 
 }  // пространство имён sme

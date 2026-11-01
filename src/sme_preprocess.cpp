@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <span>
 #include <sstream>
 #include <unordered_map>
@@ -36,8 +37,14 @@ namespace sme
 
 	// Снимает // и /* */ до разбора директив. Строками считаются ", ' и `.
 	// Иначе URL в обратных кавычках `http://...` обрежется комментарием.
-	std::string stripComments(std::string_view source) {
-		std::string out;
+	struct CommentResult {
+		std::string text;
+		error::Error::Opt error;
+	};
+
+	CommentResult stripComments(std::string_view source, std::string_view name) {
+		CommentResult result;
+		std::string& out = result.text;
 		out.reserve(source.size());
 		int line = 1;
 		for (size_t i = 0; i < source.size();) {
@@ -94,24 +101,41 @@ namespace sme
 					++i;
 				}
 				if (!closed && ateCode) {
-					throw RError("unterminated comment", start);
+					if (!result.error) {
+						error::Location location;
+						location.source = name;
+						location.line = start;
+						result.error.emplace(error::Code::PREPROCESSING_UNTERMINATED_COMMENT,
+							"unterminated comment", std::move(location));
+					}
 				}
 				continue;
 			}
 			out.push_back(c);
 			++i;
 		}
-		return out;
+		return result;
 	}
 
-	std::string readText(const files::IFileSystem::Ptr& fileSystem, const std::string& path)
+	struct ReadResult {
+		std::string text;
+		error::Error::Opt error;
+	};
+
+	ReadResult readText(const files::IFileSystem::Ptr& fileSystem, const std::string& path)
 	{
 		if (!fileSystem) {
-			throw RError("file system is empty");
+			error::Location location;
+			location.source = path;
+			return {{}, error::Error(error::Code::PREPROCESSING_FILE_SYSTEM_EMPTY,
+				"file system is empty", std::move(location))};
 		}
 		auto file = fileSystem->Open(path, files::OpenMode::Read);
 		if (!file) {
-			throw RError("cannot open '" + path + "'");
+			error::Location location;
+			location.source = path;
+			return {{}, error::Error(error::Code::PREPROCESSING_FILE_OPEN_FAILED,
+				"cannot open '" + path + "'", std::move(location))};
 		}
 		std::string text;
 		std::byte buffer[4096];
@@ -122,7 +146,7 @@ namespace sme
 			}
 			text.append(reinterpret_cast<const char*>(buffer), n);
 		}
-		return text;
+		return {std::move(text), std::nullopt};
 	}
 
 	bool startsWithWord(const std::string& text, const char* word) {
@@ -163,7 +187,12 @@ namespace sme
 		}
 		
 		SourceUnit runText(std::string_view source, std::string_view name) {
-			expandStream(stripComments(source), std::string(name));
+			CommentResult comments = stripComments(source, name);
+			if (comments.error) {
+				_error = std::move(comments.error);
+				return finish();
+			}
+			expandStream(comments.text, std::string(name));
 			return finish();
 		}
 		
@@ -176,11 +205,20 @@ namespace sme
 		std::vector<std::string> _globals;
 		std::unordered_set<std::string> _globalNames;
 		std::vector<Literal> _literals;
+		error::Error::Opt _error;
 		bool _abort = false;
 		std::string _out;
 		
 		SourceUnit finish() const {
-			return SourceUnit{_out, _globals, _literals};
+			return SourceUnit{_out, _globals, _literals, _error};
+		}
+
+		void addError(error::Code code, std::string message, const std::string& source, int line = 0) {
+			if (_error) return;
+			error::Location location;
+			location.source = source;
+			location.line = line;
+			_error.emplace(code, std::move(message), std::move(location));
 		}
 		
 		bool defined(const std::string& name) const {
@@ -193,7 +231,8 @@ namespace sme
 			}
 		}
 		
-		std::string resolve(const std::string& current, const std::string& spec) const {
+		std::optional<std::string> resolve(const std::string& current, const std::string& spec) const {
+			if (!_files) return std::nullopt;
 			const std::string candidates[] = {
 				JoinPath(ParentPath(current), spec),
 				JoinPath(_root, spec),
@@ -203,7 +242,7 @@ namespace sme
 					return candidate;
 				}
 			}
-			throw RError("cannot include '" + spec + "' from " + current);
+			return std::nullopt;
 		}
 		
 		void process(const std::string& file) {
@@ -212,7 +251,19 @@ namespace sme
 			}
 			const std::string previous = _current;
 			_current = file;
-			expandStream(stripComments(readText(_files, file)), file);
+			ReadResult read = readText(_files, file);
+			if (read.error) {
+				_error = std::move(read.error.value());
+				_current = previous;
+				return;
+			}
+			CommentResult comments = stripComments(read.text, file);
+			if (comments.error) {
+				_error = std::move(comments.error);
+				_current = previous;
+				return;
+			}
+			expandStream(comments.text, file);
 			_current = previous;
 		}
 		
@@ -221,7 +272,7 @@ namespace sme
 			std::stringstream stream(text);
 			std::string line;
 			int lineNo = lineBase;
-			while (std::getline(stream, line)) {
+			while (!_error && std::getline(stream, line)) {
 				++lineNo;
 				if (!line.empty() && line.back() == '\r') {
 					line.pop_back();
@@ -232,7 +283,9 @@ namespace sme
 				}
 				if (startsWithWord(trimmed, "#include")) {
 					if (_current.empty()) {
-						throw RError("include is not available in " + name, lineNo);
+						addError(error::Code::PREPROCESSING_INCLUDE_NOT_AVAILABLE,
+							"include is not available in " + name, name, lineNo);
+						continue;
 					}
 					includeLine(_current, trimmed, lineNo);
 					continue;
@@ -251,9 +304,13 @@ namespace sme
 					break;
 				}
 				if (!trimmed.empty() && trimmed[0] == '#') {
-					throw RError("unknown directive in " + name, lineNo);
+					addError(error::Code::PREPROCESSING_UNKNOWN_DIRECTIVE,
+						"unknown directive in " + name, name, lineNo);
+					continue;
 				}
-				_out += expand(line, 0);
+				auto expanded = expand(line, 0, name, lineNo);
+				if (!expanded) continue;
+				_out += *expanded;
 				_out.push_back('\n');
 			}
 		}
@@ -261,20 +318,36 @@ namespace sme
 		void includeLine(const std::string& current, const std::string& line, int lineNo) {
 			std::string rest = trim(line.substr(8));
 			if (rest.size() < 2 || rest.front() != '"') {
-				throw RError("include expects a quoted path", lineNo);
+				addError(error::Code::PREPROCESSING_INCLUDE_PATH_NOT_QUOTED,
+					"include expects a quoted path", current, lineNo);
+				return;
 			}
 			size_t end = rest.find('"', 1);
 			if (end == std::string::npos) {
-				throw RError("unterminated include path", lineNo);
+				addError(error::Code::PREPROCESSING_UNTERMINATED_INCLUDE_PATH,
+					"unterminated include path", current, lineNo);
+				return;
 			}
-			const std::string path = resolve(current, rest.substr(1, end - 1));
-			process(path);
+			if (!_files) {
+				addError(error::Code::PREPROCESSING_FILE_SYSTEM_EMPTY,
+					"file system is empty", current, lineNo);
+				return;
+			}
+			auto path = resolve(current, rest.substr(1, end - 1));
+			if (!path) {
+				addError(error::Code::PREPROCESSING_INCLUDE_NOT_FOUND,
+					"cannot include '" + rest.substr(1, end - 1) + "' from " + current, current, lineNo);
+				return;
+			}
+			process(*path);
 		}
 		
 		void defineLine(const std::string& line, const std::string& name, int lineNo) {
 			std::string rest = trim(line.substr(4));
 			if (rest.empty() || !isIdentStart(static_cast<unsigned char>(rest[0]))) {
-				throw RError("define expects a name in " + name, lineNo);
+				addError(error::Code::PREPROCESSING_DEFINE_NAME_MISSING,
+					"define expects a name in " + name, name, lineNo);
+				return;
 			}
 			size_t i = 1;
 			while (i < rest.size() && isIdentCont(static_cast<unsigned char>(rest[i]))) {
@@ -298,12 +371,15 @@ namespace sme
 		// Выражение вроде 1+2 литералом не является: глобал остаётся null,
 		// а в текст скрипта по-прежнему вставляется исходная строка.
 		void rememberLiteral(const std::string& name, const std::string& value, const std::string& file, int lineNo) {
-			std::vector<Token> tokens;
-			try {
-				tokens = lex(value, file);
-			} catch (const RError&) {
-				throw RError("invalid define '" + name + "' in " + file, lineNo);
+			LexResult lexed = lex(value, file);
+			if (lexed.error) {
+				error::Location location = lexed.error->location();
+				location.line = lineNo;
+				_error.emplace(lexed.error->code(),
+					"invalid define '" + name + "': " + lexed.error->message(), std::move(location));
+				return;
 			}
+			const std::vector<Token>& tokens = lexed.tokens;
 			Literal literal;
 			literal.name = name;
 			literal.kind = Literal::Kind::Null;
@@ -318,17 +394,25 @@ namespace sme
 			if (single) {
 				const Token& token = tokens[index];
 				if (negative && token.kind != Token::Kind::Int && token.kind != Token::Kind::Float) {
-					throw RError("invalid define '" + name + "' in " + file, lineNo);
+					addError(error::Code::PREPROCESSING_INVALID_DEFINE,
+						"invalid define '" + name + "' in " + file, file, lineNo);
+					return;
 				}
 				switch (token.kind) {
 					case Token::Kind::Int:
 						literal.kind = Literal::Kind::Int;
 						if (token.text == "2147483648") {
-							if (!negative) throw RError("integer literal out of range in " + file, lineNo);
+							if (!negative) {
+								addError(error::Code::PREPROCESSING_INTEGER_OUT_OF_RANGE,
+									"integer literal out of range in " + file, file, lineNo);
+								return;
+							}
 							literal.integer = std::numeric_limits<int>::min();
 						} else if (negative) {
 							if (token.intValue == std::numeric_limits<int>::min()) {
-								throw RError("integer literal out of range in " + file, lineNo);
+								addError(error::Code::PREPROCESSING_INTEGER_OUT_OF_RANGE,
+									"integer literal out of range in " + file, file, lineNo);
+								return;
 							}
 							literal.integer = -token.intValue;
 						} else {
@@ -408,9 +492,12 @@ namespace sme
 		}
 		
 		// Глубина больше 32 — ошибка. Раньше хвост вроде #def A A молча оставался нераскрытым.
-		std::string expand(std::string_view text, int depth) {
+		std::optional<std::string> expand(std::string_view text, int depth,
+			const std::string& name, int lineNo) {
 			if (depth > 32) {
-				throw RError("macro expanded too many times");
+				addError(error::Code::PREPROCESSING_MACRO_EXPANSION_LIMIT,
+					"macro expanded too many times", name, lineNo);
+				return std::nullopt;
 			}
 			std::string out;
 			bool inString = false;
@@ -444,7 +531,9 @@ namespace sme
 					std::string ident(text.substr(begin, i - begin));
 					auto it = _defines.find(ident);
 					if (it != _defines.end() && !it->second.empty()) {
-						out += expand(it->second, depth + 1);
+						auto expanded = expand(it->second, depth + 1, name, lineNo);
+						if (!expanded) return std::nullopt;
+						out += *expanded;
 					} else {
 						out += ident;
 					}

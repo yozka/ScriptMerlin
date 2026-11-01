@@ -98,8 +98,13 @@ namespace sme
 
 	// Повторный load не сбрасывает уже созданные глобалы: addGlobal выходит,
 	// если имя есть. #def проходит отдельным циклом и значение перезаписывает.
-	void Engine::compileUnit(const SourceUnit& unit, std::string_view name) {
-		Program program = parse(unit.source, name);
+	error::Error::Opt Engine::CompileUnit(const SourceUnit& unit, std::string_view name) {
+		ParseResult parsed = parse(unit.source, name);
+		if (parsed.error) {
+			return std::move(parsed.error);
+		}
+		
+		Program& program = parsed.program;
 		auto addGlobal = [&](const std::string& global, Value value) {
 			for (const Global& existing : _state->globals) {
 				if (existing.name == global) {
@@ -150,24 +155,45 @@ namespace sme
 			env.globals.emplace(_state->globals[index].name, index);
 		}
 		_state->sourceName = std::string(name);
-		_state->functions = compile(program, env);
-	}
-
-	void Engine::load(const std::string& path) {
-		rejectActiveCall();
-		compileUnit(PreprocessFile(_state->files, path), path);
-	}
-
-	void Engine::loadSource(std::string_view source, std::string_view name) {
-		rejectActiveCall();
-		compileUnit(PreprocessSource(_state->files, source, name, {}), name);
-	}
-
-	void Engine::rejectActiveCall() const {
-		if (!_state->runStack.empty()) {
-			throw RError("cannot load while a script call is active");
+		CompileResult compiled = compile(program, env, name);
+		if (compiled.error) {
+			return std::move(compiled.error);
 		}
+		_state->functions = std::move(compiled.functions);
+		return std::nullopt;
 	}
+
+
+	error::Error::Opt Engine::Load(const std::string& path)
+	{
+		if (!_state->runStack.empty()) {
+			error::Location location;
+			location.source = path;
+			return error::Error(error::Code::ENGINE_LOAD_DURING_ACTIVE_CALL, "cannot load while a script call is active", std::move(location));
+		}
+		SourceUnit unit = PreprocessFile(_state->files, path);
+		if (unit.error) {
+			return std::move(unit.error);
+		}
+		return CompileUnit(unit, path);
+	}
+
+
+	error::Error::Opt Engine::LoadSource(std::string_view source, std::string_view name)
+	{
+		if (!_state->runStack.empty()) {
+			error::Location location;
+			location.source = name;
+			return error::Error(error::Code::ENGINE_LOAD_DURING_ACTIVE_CALL,
+				"cannot load while a script call is active", std::move(location));
+		}
+		SourceUnit unit = PreprocessSource(_state->files, source, name, {});
+		if (unit.error) {
+			return std::move(unit.error);
+		}
+		return CompileUnit(unit, name);
+	}
+
 
 	// Общий путь call и callIndex: выполнить и вернуть владеющее значение.
 	// Ошибка пишется в лог, если хост его подключил, и пробрасывается дальше.

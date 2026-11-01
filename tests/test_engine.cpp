@@ -39,7 +39,7 @@ sme::Engine& cachedEngine(const char* relative)
         sme::library::InstallDefault(*engine);
 		sme::library::InstallMath(*engine);
 		sme::library::InstallGS(*engine);
-        engine->load(scriptPath(relative));
+        EXPECT_FALSE(engine->Load(scriptPath(relative)).has_value());
         slot = std::move(engine);
     }
     return *slot;
@@ -185,7 +185,7 @@ TEST(Logic, FusedComparisonKeepsIntegerPrecision)
 {
     sme::Engine engine;
     engine.SetFileSystem(sme::MakeStdFileSystem());
-    engine.loadSource(
+    engine.LoadSource(
         "func compare_large_integers() {\n"
         "    a = 16777217;\n"
         "    b = 16777216;\n"
@@ -199,8 +199,68 @@ TEST(Parser, FnIsNotFunctionKeyword)
 {
     sme::Engine engine;
     engine.SetFileSystem(sme::MakeStdFileSystem());
-    EXPECT_THROW(engine.loadSource("fn old_function() { return 1; }"), sme::RError);
-    EXPECT_NO_THROW(engine.loadSource("func new_function() { return 1; }"));
+    auto errors = engine.LoadSource("fn old_function() { return 1; }");
+    ASSERT_TRUE(errors.has_value());
+    EXPECT_EQ(errors->code(), sme::error::Code::PARSE_EXPECTED_FUNCTION_OR_DECLARATION);
+    EXPECT_EQ(errors->location().line, 1);
+
+    sme::Engine validEngine;
+    validEngine.SetFileSystem(sme::MakeStdFileSystem());
+    EXPECT_FALSE(validEngine.LoadSource("func new_function() { return 1; }").has_value());
+}
+
+TEST(LoadErrors, PreprocessorStopsAtFirstErrorBeforeLexing)
+{
+    sme::Engine engine;
+    engine.SetFileSystem(sme::MakeStdFileSystem());
+    const auto error = engine.LoadSource("#unknown\n#unknown\n@\n", "bad.gs");
+
+    ASSERT_TRUE(error.has_value());
+    EXPECT_EQ(error->code(), sme::error::Code::PREPROCESSING_UNKNOWN_DIRECTIVE);
+    EXPECT_EQ(error->location().source, "bad.gs");
+    EXPECT_EQ(error->location().line, 1);
+}
+
+TEST(LoadErrors, LexerStopsAtFirstErrorBeforeParsing)
+{
+    sme::Engine engine;
+    engine.SetFileSystem(sme::MakeStdFileSystem());
+    const auto error = engine.LoadSource("@ @ @ @ @ @ @ @ @ @ @ @", "bad.gs");
+
+    ASSERT_TRUE(error.has_value());
+    EXPECT_EQ(error->code(), sme::error::Code::LEXING_UNEXPECTED_CHARACTER);
+    EXPECT_EQ(error->location().source, "bad.gs");
+    EXPECT_EQ(error->location().line, 1);
+}
+
+TEST(LoadErrors, ParserStopsAtFirstErrorBeforeCompilation)
+{
+    sme::Engine engine;
+    engine.SetFileSystem(sme::MakeStdFileSystem());
+    const auto error = engine.LoadSource(
+        "func broken() {\n"
+        "  var first = ;\n"
+        "  var second = ;\n"
+        "}\n",
+        "bad.gs");
+
+    ASSERT_TRUE(error.has_value());
+    EXPECT_EQ(error->code(), sme::error::Code::PARSE_EXPECTED_EXPRESSION);
+    EXPECT_EQ(error->location().source, "bad.gs");
+}
+
+TEST(LoadErrors, CompilerStopsAtFirstError)
+{
+    sme::Engine engine;
+    engine.SetFileSystem(sme::MakeStdFileSystem());
+    const auto error = engine.LoadSource(
+        "func first() { break; }\n"
+        "func second() { continue; }\n",
+        "bad.gs");
+
+    ASSERT_TRUE(error.has_value());
+    EXPECT_EQ(error->code(), sme::error::Code::COMPILATION_BREAK_OUTSIDE_LOOP);
+    EXPECT_EQ(error->location().source, "bad.gs");
 }
 
 TEST(ArithmeticOperator, SIGN_Float)
@@ -1059,7 +1119,7 @@ TEST(EdgeCases, IntegerArithmeticOverflow)
 {
     sme::Engine engine;
     engine.SetFileSystem(sme::MakeStdFileSystem());
-    engine.loadSource(R"(
+    engine.LoadSource(R"(
         func add_overflow() { return 2147483647 + 1; }
         func sub_overflow() { return -2147483647 - 2; }
         func mul_overflow() { return 1073741824 * 2; }
@@ -1109,7 +1169,7 @@ TEST(IScriptObject, test_Prop)
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
     engine.RegisterFactory("TStruct", [] { return std::make_shared<TStruct>(); });
-    engine.load(scriptPath("ver2/test_prop.gs"));
+    engine.Load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = engine.call("test_Prop");
     EXPECT_EQ(TStruct::alive, 0);
     EXPECT_EQ(value.CastString(), "hello world42");
@@ -1124,7 +1184,7 @@ TEST(IScriptObject, test_PropCall)
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
     engine.RegisterFactory("TStruct", [] { return std::make_shared<TStruct>(); });
-    engine.load(scriptPath("ver2/test_prop.gs"));
+    engine.Load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = engine.call("test_PropCall");
     EXPECT_EQ(TStruct::alive, 0);
     EXPECT_EQ(value.CastString(), "7 items");
@@ -1139,7 +1199,7 @@ TEST(IScriptObject, test_PropAdd)
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
     engine.RegisterFactory("TStruct", [] { return std::make_shared<TStruct>(); });
-    engine.load(scriptPath("ver2/test_prop.gs"));
+    engine.Load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = engine.call("test_PropAdd");
     ASSERT_TRUE(value.IsInteger());
     EXPECT_EQ(TStruct::alive, 0);
@@ -1159,7 +1219,7 @@ TEST(IScriptObject, test_PropSharedLifetime)
         kept = std::make_shared<TStruct>();
         return kept;
     });
-    engine.load(scriptPath("ver2/test_prop.gs"));
+    engine.Load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = engine.call("test_PropRelease");
     ASSERT_TRUE(value.IsInteger());
     EXPECT_EQ(std::get<int>(value), 0);
@@ -1209,7 +1269,7 @@ TEST(ValueOwnership, ValuesOutliveEngineAndCalls)
     {
         sme::Engine engine;
         engine.SetFileSystem(sme::MakeStdFileSystem());
-        engine.loadSource(R"(
+        engine.LoadSource(R"(
             func text() { return "a string that exceeds inline storage"; }
             func table() { return [1, 2, 3]; }
             func other() { return 42; }
@@ -1250,7 +1310,7 @@ TEST(ValueOwnership, CyclicTableOwnershipIsRejected)
 {
     sme::Engine engine;
     engine.SetFileSystem(sme::MakeStdFileSystem());
-    engine.loadSource(R"(
+    engine.LoadSource(R"(
         func cycle() {
             var table = [0];
             table[0] = table;
@@ -1291,7 +1351,7 @@ TEST(IScriptObject, test_PropCompound)
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
     engine.RegisterFactory("TStruct", [] { return std::make_shared<TStruct>(); });
-    engine.load(scriptPath("ver2/test_prop.gs"));
+    engine.Load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = engine.call("test_PropCompound");
     EXPECT_EQ(TStruct::alive, 0);
     EXPECT_EQ(value.CastString(), "16abc");
@@ -1601,7 +1661,7 @@ TEST(Language, BackslashPaths)
 
     sme::Engine engine;
     engine.SetFileSystem(sme::MakeStdFileSystem());
-    engine.load(path);
+    engine.Load(path);
     EXPECT_EQ(std::get<int>(engine.call("test_LangInclude")), 7);
 }
 
@@ -1612,7 +1672,7 @@ TEST(Language, Abort)
 	sme::library::InstallDefault(engine);
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
-    engine.load(scriptPath("ver2/test_language_abort.gs"));
+    engine.Load(scriptPath("ver2/test_language_abort.gs"));
     EXPECT_EQ(engine.findFunction("abort_should_not_compile"), std::nullopt);
     EXPECT_EQ(globalInt(engine, "ABORT_SEEN"), 1);
 }
@@ -1624,7 +1684,7 @@ TEST(Language, Stop)
 	sme::library::InstallDefault(engine);
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
-    engine.load(scriptPath("ver2/test_language.gs"));
+    engine.Load(scriptPath("ver2/test_language.gs"));
     engine.call("test_Stop");
     EXPECT_TRUE(engine.stopped());
     EXPECT_EQ(globalInt(engine, "lang_stop_mark"), 17);
@@ -1671,7 +1731,7 @@ TEST(Performance, WorkloadSpeed)
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
     engine.RegisterFactory("TStruct", [] { return std::make_shared<TStruct>(); });
-    engine.load(scriptPath("ver2/test_performance.gs"));
+    engine.Load(scriptPath("ver2/test_performance.gs"));
 
     constexpr int kRepeats = 5;
     constexpr int kIterations = 1000;

@@ -64,18 +64,22 @@ int main()
         return sme::Value::Integer(*left + *right);
     });
 
-    engine.loadSource(R"(
+    const auto error = engine.LoadSource(R"(
         func main() {
             return add(20, 22);
         }
     )");
+    if (error) {
+        std::cerr << error->message() << '\n';
+        return 1;
+    }
 
     const sme::Value result = engine.call("main");
     std::cout << result.ToString() << '\n';
 }
 ```
 
-В примере скрипт вызывает зарегистрированную C++-функцию и возвращает `42`. Нативная функция получает уже вычисленные аргументы в `std::span<const sme::Value>`; проверяйте их количество и типы перед чтением.
+В примере скрипт вызывает зарегистрированную C++-функцию и возвращает `42`. `LoadSource` возвращает `std::optional<sme::error::Error>`: пустое значение означает успешную загрузку и компиляцию, а при первой ошибке дальнейшая обработка останавливается. Нативная функция получает уже вычисленные аргументы в `std::span<const sme::Value>`; проверяйте их количество и типы перед чтением.
 
 ## Подключение в CMake
 
@@ -125,7 +129,7 @@ cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/install
 - `Engine::bind` передаёт объект приложения как глобальную переменную скрипта. Для интеграции объект реализует интерфейс `sme::IScriptObject`.
 - `Engine::useFileSystem` позволяет задать файловую систему, используемую для загрузки скриптов и `#include`.
 - `Engine::useLog` подключает логгер для вывода и сообщений движка.
-- `Engine::loadSource` загружает исходный код из строки, а `Engine::load` — из файла.
+- `Engine::LoadSource` загружает исходный код из строки, а `Engine::Load` — из файла.
 - `Engine::call` вызывает функцию скрипта по имени.
 
 Строки хранятся непосредственно в `Value`; при взятии ссылки строковый слот

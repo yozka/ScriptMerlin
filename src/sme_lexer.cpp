@@ -10,9 +10,12 @@
 
 #include <cctype>
 #include <cstdint>
+#include <exception>
 #include <limits>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 namespace sme {
 namespace {
@@ -53,7 +56,7 @@ public:
         : _source(source)
         , _name(name) {}
 
-    std::vector<Token> run() {
+    LexResult run() {
         if (_source.size() >= 3 &&
             static_cast<unsigned char>(_source[0]) == 0xEF &&
             static_cast<unsigned char>(_source[1]) == 0xBB &&
@@ -61,14 +64,19 @@ public:
             _pos = 3; // BOM UTF-8, на токены не влияет
         }
         std::vector<Token> tokens;
-        while (true) {
+        while (!_error) {
             Token token = next();
-            tokens.push_back(token);
+            if (token.kind != Token::Kind::Invalid) {
+                tokens.push_back(token);
+            }
             if (token.kind == Token::Kind::End) {
                 break;
             }
         }
-        return tokens;
+        if (tokens.empty() || tokens.back().kind != Token::Kind::End) {
+            tokens.push_back(make(Token::Kind::End));
+        }
+        return LexResult{std::move(tokens), std::move(_error)};
     }
 
 private:
@@ -78,6 +86,18 @@ private:
     int _line = 1;
     bool _hasHeld = false;
     Token _held; // токен, отложенный, потому что перед ним стоял перевод строки
+    error::Error::Opt _error;
+
+    void report(error::Code code, std::string message, int line) {
+        if (!_error) {
+            error::Location location;
+            location.source = _name;
+            location.line = line;
+            _error.emplace(code, std::move(message), std::move(location));
+        }
+    }
+
+    Token invalid() const { return make(Token::Kind::Invalid); }
 
     bool eof() const { return _pos >= _source.size(); }
 
@@ -141,7 +161,8 @@ private:
                     }
                 }
                 if (!closed && ateCode) {
-                    throw RError("unterminated comment in " + _name, start);
+                    report(error::Code::LEXING_UNTERMINATED_COMMENT,
+                        "unterminated comment in " + _name, start);
                 }
                 continue;
             }
@@ -287,7 +308,9 @@ private:
             if (peek() == '|') { get(); return at(line, Token::Kind::OrOr); }
             return eqSuffix(Token::Kind::Pipe, Token::Kind::PipeEq);
         default:
-            throw RError(std::string("unexpected character '") + c + "' in " + _name, line);
+            report(error::Code::LEXING_UNEXPECTED_CHARACTER,
+                std::string("unexpected character '") + c + "' in " + _name, line);
+            return invalid();
         }
     }
 
@@ -325,18 +348,27 @@ private:
                 digits.push_back(get());
             }
             if (digits.empty()) {
-                throw RError("hex literal has no digits in " + _name, line);
+                report(error::Code::LEXING_HEX_LITERAL_WITHOUT_DIGITS,
+                    "hex literal has no digits in " + _name, line);
+                return invalid();
             }
             uint32_t value = 0;
+            bool outOfRange = false;
             for (char digit : digits) {
                 uint32_t nibble = 0;
                 if (digit >= '0' && digit <= '9') nibble = static_cast<uint32_t>(digit - '0');
                 else if (digit >= 'a' && digit <= 'f') nibble = static_cast<uint32_t>(digit - 'a' + 10);
                 else nibble = static_cast<uint32_t>(digit - 'A' + 10);
                 if (value > (std::numeric_limits<uint32_t>::max() >> 4)) {
-                    throw RError("integer literal out of range in " + _name, line);
+                    outOfRange = true;
+                    continue;
                 }
                 value = (value << 4) | nibble;
+            }
+            if (outOfRange) {
+                report(error::Code::LEXING_INTEGER_OUT_OF_RANGE,
+                    "integer literal out of range in " + _name, line);
+                return invalid();
             }
             Token token = at(line, Token::Kind::Int);
             token.intValue = static_cast<int>(value);
@@ -347,16 +379,25 @@ private:
             get();
             uint32_t value = 0;
             int bits = 0;
+            bool outOfRange = false;
             while (peek() == '0' || peek() == '1') {
                 uint32_t bit = get() == '1' ? 1u : 0u;
                 if (value > (std::numeric_limits<uint32_t>::max() >> 1)) {
-                    throw RError("integer literal out of range in " + _name, line);
+                    outOfRange = true;
+                    continue;
                 }
                 value = (value << 1) | bit;
                 ++bits;
             }
             if (bits == 0) {
-                throw RError("binary literal has no digits in " + _name, line);
+                report(error::Code::LEXING_BINARY_LITERAL_WITHOUT_DIGITS,
+                    "binary literal has no digits in " + _name, line);
+                return invalid();
+            }
+            if (outOfRange) {
+                report(error::Code::LEXING_INTEGER_OUT_OF_RANGE,
+                    "integer literal out of range in " + _name, line);
+                return invalid();
             }
             Token token = at(line, Token::Kind::Int);
             token.intValue = static_cast<int>(value);
@@ -380,7 +421,9 @@ private:
             text.push_back(get());
             if (peek() == '+' || peek() == '-') text.push_back(get());
             if (!std::isdigit(static_cast<unsigned char>(peek()))) {
-                throw RError("exponent has no digits in " + _name, line);
+                report(error::Code::LEXING_EXPONENT_WITHOUT_DIGITS,
+                    "exponent has no digits in " + _name, line);
+                return invalid();
             }
             while (std::isdigit(static_cast<unsigned char>(peek()))) {
                 text.push_back(get());
@@ -397,15 +440,21 @@ private:
                     token.intValue = 0;
                     token.text = "2147483648";
                 } else if (value < std::numeric_limits<int>::min() || value > std::numeric_limits<int>::max()) {
-                    throw RError("integer literal out of range in " + _name, line);
+                    report(error::Code::LEXING_INTEGER_OUT_OF_RANGE,
+                        "integer literal out of range in " + _name, line);
+                    return invalid();
                 } else {
                     token.intValue = static_cast<int>(value);
                 }
             }
-        } catch (const RError&) {
-            throw;
-        } catch (...) {
-            throw RError("numeric literal out of range in " + _name, line);
+        } catch (const std::invalid_argument&) {
+            report(error::Code::LEXING_NUMERIC_LITERAL_OUT_OF_RANGE,
+                "numeric literal out of range in " + _name, line);
+            return invalid();
+        } catch (const std::out_of_range&) {
+            report(error::Code::LEXING_NUMERIC_LITERAL_OUT_OF_RANGE,
+                "numeric literal out of range in " + _name, line);
+            return invalid();
         }
         return token;
     }
@@ -413,11 +462,17 @@ private:
     Token scanChar(int line) {
         get();
         if (eof() || peek() == '\n') {
-            throw RError("unterminated character in " + _name, line);
+            report(error::Code::LEXING_UNTERMINATED_CHARACTER,
+                "unterminated character in " + _name, line);
+            return invalid();
         }
         char value = get();
         if (value == '\\') {
-            if (eof()) throw RError("unterminated character in " + _name, line);
+            if (eof()) {
+                report(error::Code::LEXING_UNTERMINATED_CHARACTER,
+                    "unterminated character in " + _name, line);
+                return invalid();
+            }
             char esc = get();
             switch (esc) {
             case 'n': value = '\n'; break;
@@ -430,7 +485,9 @@ private:
             }
         }
         if (peek() != '\'') {
-            throw RError("unterminated character in " + _name, line);
+            report(error::Code::LEXING_UNTERMINATED_CHARACTER,
+                "unterminated character in " + _name, line);
+            return invalid();
         }
         get();
         Token token = at(line, Token::Kind::Int);
@@ -444,11 +501,15 @@ private:
         while (!eof() && peek() != quote) {
             char c = get();
             if (c == '\n') {
-                throw RError("unterminated string in " + _name, line);
+                report(error::Code::LEXING_UNTERMINATED_STRING,
+                    "unterminated string in " + _name, line);
+                return invalid();
             }
             if (c == '\\') {
                 if (eof()) {
-                    throw RError("unterminated string in " + _name, line);
+                    report(error::Code::LEXING_UNTERMINATED_STRING,
+                        "unterminated string in " + _name, line);
+                    return invalid();
                 }
                 char esc = get();
                 switch (esc) {
@@ -465,7 +526,9 @@ private:
             }
         }
         if (peek() != quote) {
-            throw RError("unterminated string in " + _name, line);
+            report(error::Code::LEXING_UNTERMINATED_STRING,
+                "unterminated string in " + _name, line);
+            return invalid();
         }
         get();
         Token token = at(line, Token::Kind::String);
@@ -476,7 +539,7 @@ private:
 
 }  // анонимное пространство имён
 
-std::vector<Token> lex(std::string_view source, std::string_view name) {
+LexResult lex(std::string_view source, std::string_view name) {
     return Lexer(source, name).run();
 }
 
