@@ -58,9 +58,9 @@ namespace sme
 	}
 
 
-	void Engine::Error(const error::Code code, const std::string& text)
+	void Engine::RuntimeError(const error::Code code, const std::string& text)
 	{
-		_state->Error({code, text});
+		_state->RuntimeError({code, text});
 	}
 
 
@@ -118,7 +118,7 @@ namespace sme
 				case GlobalKind::Int: return Value::Integer(0);
 				case GlobalKind::Float: return Value::Float(0.f);
 				case GlobalKind::Str: return Value::String({});
-				case GlobalKind::Tab: return makeTable({});
+				case GlobalKind::Tab: return Value::Table({});
 				case GlobalKind::Ptr: return Value::Pointer();
 				case GlobalKind::Dynamic:
 				case GlobalKind::Ref: return Value::Null();
@@ -325,13 +325,5 @@ namespace sme
 		}
 		std::get<TableHandle>(target)->resize(size, Value::Integer(0));
 	}
-
-	Value Engine::makeTable(std::vector<Value> items) {
-		auto table = std::make_shared<Table>();
-		table->assign(std::make_move_iterator(items.begin()), std::make_move_iterator(items.end()));
-		return Value(std::in_place_type<TableHandle>, std::move(table));
-	}
-
-
 
 }

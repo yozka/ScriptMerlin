@@ -91,6 +91,7 @@ namespace sme
 		static Value Null();
 		static Value Pointer();
 		static Value Shared(Value value);
+		static Value Table(std::vector<Value> items);
 		
 	public:
 		Type TypeOf() const;

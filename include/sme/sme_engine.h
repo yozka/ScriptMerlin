@@ -72,7 +72,6 @@ namespace sme
 		// Протухшая ссылка читается как null, без исключения.
 		Value follow(const Value& value) const;
 		void resizeTable(const Value& table, size_t size);
-		Value makeTable(std::vector<Value> items);
 		
 		// Подменяет таблицу функций. Уже существующие глобалы сохраняют значения;
 		// #def того же имени значение перезаписывает. Пока на стеке есть вызов, Load
@@ -92,7 +91,7 @@ namespace sme
 		
 	public:
 		void Log(const log::Level level, const std::string& text);
-		void Error(const error::Code code, const std::string& text);
+		void RuntimeError(const error::Code code, const std::string& text);
 		
 	private:
 		error::Error::Opt CompileUnit(const struct SourceUnit& unit, std::string_view name);

@@ -18,7 +18,7 @@ size_t State::freshReferenceId() {
 }
 
 
-void State::Error(error::Error error)
+void State::RuntimeError(error::Error error)
 {
 	if (errorHandler) {
 		errorHandler->Handle(std::move(error));

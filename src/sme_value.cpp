@@ -53,7 +53,7 @@ namespace sme
 
 	std::string Value::CastString() const
 	{
-		std::vector<const Table*> seen;
+		std::vector<const sme::Table*> seen;
 		return render(*this, seen);
 	}
 
@@ -97,6 +97,13 @@ namespace sme
 	Value Value::Shared(Value value)
 	{
 		return Value(std::in_place_type<SharedValue>, std::make_shared<Value>(std::move(value)));
+	}
+
+	Value Value::Table(std::vector<Value> items)
+	{
+		auto table = std::make_shared<sme::Table>();
+		table->assign(std::make_move_iterator(items.begin()), std::make_move_iterator(items.end()));
+		return Value(std::in_place_type<TableHandle>, std::move(table));
 	}
 
 

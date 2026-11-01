@@ -155,7 +155,7 @@ struct State
     // Вид живёт в пуле констант chunk, пока этот chunk не заменят.
     std::string_view constantString(const Chunk& chunk, size_t index, int line) const;
 
-	void Error(error::Error error);
+	void RuntimeError(error::Error error);
 };
 
 }  // пространство имён sme
