@@ -1605,19 +1605,6 @@ TEST(Language, BackslashPaths)
     EXPECT_EQ(std::get<int>(engine.call("test_LangInclude")), 7);
 }
 
-TEST(Language, Scope)
-{
-    sme::Engine engine;
-    engine.SetFileSystem(sme::MakeStdFileSystem());
-	sme::library::InstallDefault(engine);
-	sme::library::InstallMath(engine);
-	sme::library::InstallGS(engine);
-    engine.load(scriptPath("ver2/test_language.gs"));
-    EXPECT_EQ(engine.scope(), 41);
-    EXPECT_EQ(engine.functionScope("test_LangInclude"), std::optional<size_t>{41});
-    EXPECT_EQ(engine.functionScope("lang_included"), std::optional<size_t>{41});
-}
-
 TEST(Language, Abort)
 {
     sme::Engine engine;

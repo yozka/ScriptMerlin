@@ -1,5 +1,3 @@
-#scope 41
-
 #def LANG_NEG		-1
 #def LANG_FLT		1.5
 #def LANG_NEGFLT	-2.5

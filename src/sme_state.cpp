@@ -12,17 +12,19 @@ size_t State::freshFrameId() {
     return id;
 }
 
-uint32_t State::freshReferenceId() {
+size_t State::freshReferenceId() {
     if (referenceSerial == 0) throw RError("reference identity exhausted");
     return referenceSerial++;
 }
 
-void State::fail(const std::string& message, int line) {
-    if (log) {
-        log->message(log::Level::Error, message);
-    }
-    throw RError(message, line);
+
+void State::Error(error::Error error)
+{
+	if (errorHandler) {
+		errorHandler->Handle(std::move(error));
+	}
 }
+
 
 // Ссылка истинна сама по себе, независимо от значения, на которое указывает.
 bool State::truthy(const Value& value) const {

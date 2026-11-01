@@ -27,7 +27,6 @@ namespace sme
 		std::string source;
 		std::vector<std::string> globals; // имена из пустого #def, значение null
 		std::vector<Literal> literals;
-		size_t scope = 0; // #scope, одно число на файл
 	};
 
 	SourceUnit PreprocessFile(const files::IFileSystem::Ptr& files, const std::string& path);

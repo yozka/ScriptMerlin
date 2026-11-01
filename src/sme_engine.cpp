@@ -46,7 +46,7 @@ namespace sme
 	void Engine::SetErrorHandle(error::IHandler::Ptr error)
 	{
 		SME_ASSERT(error, "error system is empty");
-		_state->error = std::move(error);
+		_state->errorHandler = std::move(error);
 	}
 
 
@@ -60,11 +60,8 @@ namespace sme
 
 	void Engine::Error(const error::Code code, const std::string& text)
 	{
-		if (_state->log) {
-			_state->log->message(log::Level::Error, std::to_string(static_cast<int>(code)) + " " + text);
-		}
+		_state->Error({code, text});
 	}
-
 
 
 	void Engine::RegisterNative(std::string name, NativeFn function)
@@ -153,9 +150,7 @@ namespace sme
 			env.globals.emplace(_state->globals[index].name, index);
 		}
 		_state->sourceName = std::string(name);
-		_state->scope = unit.scope;
 		_state->functions = compile(program, env);
-		for (Chunk& chunk : _state->functions) chunk.scope = unit.scope;
 	}
 
 	void Engine::load(const std::string& path) {
@@ -230,15 +225,6 @@ namespace sme
 			return Value::Null();
 		}
 		return _state->globals[index].value;
-	}
-
-	size_t Engine::scope() const { return _state->scope; }
-
-	std::optional<size_t> Engine::functionScope(std::string_view name) const {
-		for (const Chunk& chunk : _state->functions) {
-			if (chunk.name == name) return chunk.scope;
-		}
-		return std::nullopt;
 	}
 
 	void Engine::RegisterFactory(std::string name, std::function<std::shared_ptr<IScriptObject>()> factory) {

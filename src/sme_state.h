@@ -105,7 +105,6 @@ struct Chunk {
     uint16_t registerCount = 0;
     std::vector<Instruction> code;
     std::vector<Constant> constants;
-    size_t scope = 0; // копия #scope файла, одна на все функции загрузки
 };
 
 struct Global {
@@ -135,7 +134,7 @@ struct State
 {
 	files::IFileSystem::Ptr files;
 	log::ILogging::Ptr log;
-	error::IHandler::Ptr error;
+	error::IHandler::Ptr errorHandler;
 
 	
 	std::vector<Global> globals;
@@ -145,18 +144,18 @@ struct State
     std::unordered_map<std::string, Factory> factories;
     std::vector<RunState> runStack;
     size_t frameSerial = 1;
-    uint32_t referenceSerial = 1;
+    size_t referenceSerial = 1;
     std::string sourceName = "script";
-    size_t scope = 0;
 
     size_t freshFrameId();
-    uint32_t freshReferenceId();
-    void fail(const std::string& message, int line = 0);
+    size_t freshReferenceId();
 
     bool truthy(const Value& value) const;
 
     // Вид живёт в пуле констант chunk, пока этот chunk не заменят.
     std::string_view constantString(const Chunk& chunk, size_t index, int line) const;
+
+	void Error(error::Error error);
 };
 
 }  // пространство имён sme

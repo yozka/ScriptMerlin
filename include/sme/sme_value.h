@@ -48,7 +48,7 @@ namespace sme
 		uint32_t frame = 0;
 		size_t frameGeneration = 0;
 		uint16_t slot = 0;
-		uint32_t identity = 0;
+		size_t identity = 0;
 		
 		friend bool operator==(const LocalReference&, const LocalReference&) = default;
 	};
@@ -56,7 +56,7 @@ namespace sme
 	struct GlobalReference
 	{
 		uint32_t slot = 0;
-		uint32_t identity = 0;
+		size_t identity = 0;
 		
 		friend bool operator==(const GlobalReference&, const GlobalReference&) = default;
 	};
@@ -65,7 +65,7 @@ namespace sme
 	{
 		TableHandle container;
 		uint32_t index = 0;
-		uint32_t identity = 0;
+		size_t identity = 0;
 		
 		friend bool operator==(const IndexedReference&, const IndexedReference&) = default;
 	};

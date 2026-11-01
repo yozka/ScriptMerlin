@@ -6,7 +6,7 @@
 #include "sme/sme_error.h"
 
 // Препроцессор. Директивы — отдельные строки: #include, #def, #ifdef/#ifndef,
-// #scope, #abort. #ifdef однострочный: берётся следующая непустая строка,
+// #abort. #ifdef однострочный: берётся следующая непустая строка,
 // блока и #else нет. #def одновременно макрос для подстановки и начальное
 // значение глобала. Текст значения разбирает тот же лексер, что и скрипт,
 // чтобы 0b, 1e2 и ведущий ноль не разъехались.
@@ -176,12 +176,11 @@ namespace sme
 		std::vector<std::string> _globals;
 		std::unordered_set<std::string> _globalNames;
 		std::vector<Literal> _literals;
-		size_t _scope = 0;
 		bool _abort = false;
 		std::string _out;
 		
 		SourceUnit finish() const {
-			return SourceUnit{_out, _globals, _literals, _scope};
+			return SourceUnit{_out, _globals, _literals};
 		}
 		
 		bool defined(const std::string& name) const {
@@ -250,10 +249,6 @@ namespace sme
 				if (startsWithWord(trimmed, "#abort")) {
 					_abort = true;
 					break;
-				}
-				if (startsWithWord(trimmed, "#scope")) {
-					scopeLine(trimmed, name, lineNo);
-					continue;
 				}
 				if (!trimmed.empty() && trimmed[0] == '#') {
 					throw RError("unknown directive in " + name, lineNo);
@@ -373,17 +368,6 @@ namespace sme
 				return item.name == name;
 			}), _literals.end());
 			_literals.push_back(std::move(literal));
-		}
-		
-		void scopeLine(const std::string& line, const std::string& name, int lineNo) {
-			std::string rest = trim(line.substr(6));
-			try {
-				const long value = std::stol(rest);
-				if (value < 0) throw RError("scope expects an integer in " + name, lineNo);
-				_scope = static_cast<size_t>(value);
-			} catch (...) {
-				throw RError("scope expects an integer in " + name, lineNo);
-			}
 		}
 		
 		// Следующая непустая строка — вся ветка. Вложенный #ifdef на этой строке

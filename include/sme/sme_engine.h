@@ -87,10 +87,6 @@ namespace sme
 		bool stopped() const;
 		Value resume();
 		Value globalAt(size_t index) const;
-		// #scope — одно число на весь загруженный файл, не на отдельную функцию.
-		size_t scope() const;
-		// nullopt — функции с таким именем нет.
-		std::optional<size_t> functionScope(std::string_view name) const;
 		
 	public:
 		void Log(const log::Level level, const std::string& text);
