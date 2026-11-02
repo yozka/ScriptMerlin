@@ -216,8 +216,9 @@ namespace sme
 		std::optional<std::string> Resolve(const std::string& current, const std::string& spec) const {
 			if (!_files) return std::nullopt;
 			const std::string candidates[] = {
+				spec,
 				JoinPath(ParentPath(current), spec),
-				JoinPath(_root, spec),
+				JoinPath(_root, spec)
 			};
 			for (const std::string& candidate : candidates) {
 				if (_files->FileInfo(candidate)) {
