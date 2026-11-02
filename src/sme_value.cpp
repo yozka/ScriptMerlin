@@ -177,6 +177,21 @@ namespace sme
 		return false;
 	}
 
+	const std::string* Value::AsStringData() const
+	{
+		if (const auto* text = std::get_if<std::string>(this)) return text;
+		if (const auto* text = std::get_if<SharedString>(this); text && *text) return text->get();
+		return nullptr;
+	}
+
+
+	std::optional<int> Value::AsInteger() const
+	{
+		if (const auto* integer = std::get_if<int>(this)) return *integer;
+		if (const auto* flag = std::get_if<bool>(this)) return *flag ? 1 : 0;
+		return std::nullopt;
+	}
+
 
 	std::optional<float> Value::AsNumber() const
 	{

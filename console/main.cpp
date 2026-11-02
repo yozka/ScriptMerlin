@@ -13,22 +13,25 @@
 
 class Counter : public sme::IScriptObject {
 public:
-    sme::Value GetProperty(sme::Engine&, std::string_view name) const override {
+    sme::Value GetProperty(sme::Engine& engine, std::string_view name) const override {
         if (name == "value") {
             return sme::Value::Integer(_value);
         }
-        throw sme::RError("unknown property '" + std::string(name) + "'");
+        engine.RuntimeError(sme::error::Code::OBJECT_UNKNOWN_PROPERTY,
+            "unknown property '" + std::string(name) + "'");
+        return sme::Value::Null();
     }
 
-    void SetProperty(sme::Engine&, std::string_view name, const sme::Value& incoming) override {
+    void SetProperty(sme::Engine& engine, std::string_view name, const sme::Value& incoming) override {
         if (name == "value") {
             _value = std::get<int>(incoming);
             return;
         }
-        throw sme::RError("unknown property '" + std::string(name) + "'");
+        engine.RuntimeError(sme::error::Code::OBJECT_UNKNOWN_PROPERTY,
+            "unknown property '" + std::string(name) + "'");
     }
 
-    sme::Value Call(sme::Engine&, std::string_view name, std::span<const sme::Value> args) override {
+    sme::Value Call(sme::Engine& engine, std::string_view name, std::span<const sme::Value> args) override {
         if (name == "add") {
             if (args.size() != 1) {
 				return {};
@@ -36,7 +39,9 @@ public:
             _value += std::get<int>(args[0]);
             return sme::Value::Integer(_value);
         }
-        throw sme::RError("unknown method '" + std::string(name) + "'");
+        engine.RuntimeError(sme::error::Code::OBJECT_UNKNOWN_METHOD,
+            "unknown method '" + std::string(name) + "'");
+        return sme::Value::Null();
     }
 
 private:
@@ -50,7 +55,7 @@ int main() {
 	sme::library::InstallDefault(engine);
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
-    engine.bind("counter", std::make_shared<Counter>());
+    engine.Bind("counter", std::make_shared<Counter>());
     const auto error = engine.LoadSource(R"mln(
 func main() {
     counter.value = 10;
@@ -63,7 +68,12 @@ func main() {
         return 1;
     }
 
-    const sme::Value result = engine.call("main");
+    auto callResult = engine.call("main");
+    if (callResult.error) {
+        std::cerr << callResult.error->message() << '\n';
+        return 1;
+    }
+    const sme::Value& result = callResult;
     std::cout << result.ToString() << "\n";
     return std::get<int>(result) == 43 ? 0 : 1;
 }

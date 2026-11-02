@@ -9,10 +9,9 @@
 // в _held: один next() отдаёт Newline, повторный — сам токен.
 
 #include <cctype>
+#include <charconv>
 #include <cstdint>
-#include <exception>
 #include <limits>
-#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -431,30 +430,32 @@ private:
         }
         Token token = at(line, isFloat ? Token::Kind::Float : Token::Kind::Int);
         token.text = text;
-        try {
-            if (isFloat) {
-                token.floatValue = std::stof(text);
-            } else {
-                long long value = std::stoll(text, nullptr, 10);
-                if (value == 2147483648LL) {
-                    token.intValue = 0;
-                    token.text = "2147483648";
-                } else if (value < std::numeric_limits<int>::min() || value > std::numeric_limits<int>::max()) {
-                    report(error::Code::LEXING_INTEGER_OUT_OF_RANGE,
-                        "integer literal out of range in " + _name, line);
-                    return invalid();
-                } else {
-                    token.intValue = static_cast<int>(value);
-                }
+        if (isFloat) {
+            const auto [end, status] = std::from_chars(text.data(), text.data() + text.size(),
+                token.floatValue, std::chars_format::general);
+            if (status != std::errc{} || end != text.data() + text.size()) {
+                report(error::Code::LEXING_NUMERIC_LITERAL_OUT_OF_RANGE,
+                    "numeric literal out of range in " + _name, line);
+                return invalid();
             }
-        } catch (const std::invalid_argument&) {
-            report(error::Code::LEXING_NUMERIC_LITERAL_OUT_OF_RANGE,
-                "numeric literal out of range in " + _name, line);
-            return invalid();
-        } catch (const std::out_of_range&) {
-            report(error::Code::LEXING_NUMERIC_LITERAL_OUT_OF_RANGE,
-                "numeric literal out of range in " + _name, line);
-            return invalid();
+        } else {
+            long long value = 0;
+            const auto [end, status] = std::from_chars(text.data(), text.data() + text.size(), value, 10);
+            if (status != std::errc{} || end != text.data() + text.size()) {
+                report(error::Code::LEXING_NUMERIC_LITERAL_OUT_OF_RANGE,
+                    "numeric literal out of range in " + _name, line);
+                return invalid();
+            }
+            if (value == 2147483648LL) {
+                token.intValue = 0;
+                token.text = "2147483648";
+            } else if (value < std::numeric_limits<int>::min() || value > std::numeric_limits<int>::max()) {
+                report(error::Code::LEXING_INTEGER_OUT_OF_RANGE,
+                    "integer literal out of range in " + _name, line);
+                return invalid();
+            } else {
+                token.intValue = static_cast<int>(value);
+            }
         }
         return token;
     }

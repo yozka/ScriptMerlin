@@ -110,6 +110,8 @@ namespace sme
 		bool IsPointer() const;
 		bool IsInvalid() const;
 		
+		const std::string* AsStringData() const;
+		std::optional<int> AsInteger() const;
 		std::optional<float> AsNumber() const;
 		
 		

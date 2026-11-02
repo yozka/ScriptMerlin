@@ -1,11 +1,7 @@
 #pragma once
 
 #include <cstddef>
-#include <stdexcept>
-
-
 #include <optional>
-#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -174,10 +170,10 @@ namespace sme::error
 
 
 	template<typename T>
-	struct Result : public T
+	struct Result : T
 	{
-		using Base = T;
-
+	public:
+		using value_type = T;
 		Error::Opt error;
 
 		Result() = default;
@@ -186,48 +182,28 @@ namespace sme::error
 			, error(std::move(resultError))
 		{
 		}
+
+		T& value() & noexcept { return *this; }
+		const T& value() const& noexcept { return *this; }
+		T&& value() && noexcept { return std::move(*this); }
+		explicit operator bool() const noexcept { return !error; }
 	};
 
-
-	class IHandler
+	template<>
+	struct Result<void>
 	{
-	public:
-		using Ptr = std::shared_ptr<IHandler>;
-		
-	public:
-		virtual ~IHandler() = default;
-		virtual void Handle(const Error& error) noexcept = 0;
+		Error::Opt error;
+
+		Result() = default;
+		Result(Error resultError)
+			: error(std::move(resultError))
+		{
+		}
+		Result(Error::Opt resultError)
+			: error(std::move(resultError))
+		{
+		}
+
+		explicit operator bool() const noexcept { return !error; }
 	};
-
-
 }
-
-
-
-
-namespace sme
-{
-// DEPRICATED все это нужно удалить
-// Ошибка языка: разбор, компиляция или выполнение.
-// Номер строки дописывается к тексту, чтобы хост видел место в скрипте.
-// line == 0 значит «строка неизвестна» (ошибка на стороне хоста, не в исходнике).
-class RError : public std::runtime_error {
-public:
-    RError(std::string message, int line = 0)
-        : std::runtime_error(decorate(message, line))
-        , _line(line) {}
-
-    int line() const { return _line; }
-
-private:
-    int _line;
-
-    static std::string decorate(const std::string& message, int line) {
-        if (line <= 0) {
-            return message;
-        }
-        return message + " (line " + std::to_string(line) + ")";
-    }
-};
-
-}  // пространство имён sme

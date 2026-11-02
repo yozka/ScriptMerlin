@@ -117,6 +117,8 @@ struct Global {
 struct Frame {
     size_t function = 0;
     size_t ip = 0;
+    size_t currentInstruction = 0;
+    int currentLine = 0;
     std::vector<Value> regs;
     uint16_t parentDest = 0;   // куда в кадре вызывающего записать результат
     uint16_t supplied = 0;     // сколько аргументов реально передали
@@ -134,7 +136,6 @@ struct State
 {
 	files::IFileSystem::Ptr files;
 	log::ILogging::Ptr log;
-	error::IHandler::Ptr errorHandler;
 
 	
 	std::vector<Global> globals;
@@ -146,16 +147,22 @@ struct State
     size_t frameSerial = 1;
     size_t referenceSerial = 1;
     std::string sourceName = "script";
+    bool hasRuntimeError = false;
+    error::Error::Opt runtimeError;
 
     size_t freshFrameId();
     size_t freshReferenceId();
 
     bool truthy(const Value& value) const;
+    void ClearRuntimeError();
+    const error::Error& GetRuntimeError() const;
 
     // Вид живёт в пуле констант chunk, пока этот chunk не заменят.
-    std::string_view constantString(const Chunk& chunk, size_t index, int line) const;
+    std::string_view constantString(const Chunk& chunk, size_t index, int line);
 
-	void RuntimeError(error::Error error);
+    error::Error MakeRuntimeError(error::Code code, std::string text, int line = 0) const;
+	void RecordRuntimeError(error::Code code, const std::string& text, int line = 0);
+    void RecordRuntimeError(const error::Error& error);
 };
 
 }  // пространство имён sme

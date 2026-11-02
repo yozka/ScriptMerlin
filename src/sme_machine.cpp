@@ -4,8 +4,7 @@
 #include "sme/sme_error.h"
 
 // Интерпретатор. execute крутит верхний кадр верхнего RunState, пока
-// не встретит return наружу или stop. Исключение из опкода не ловится здесь:
-// RunGuard в run/resume снимает тот RunState, который этот вход положил.
+// не встретит return наружу, stop или типизированную runtime-ошибку.
 
 #include <algorithm>
 #include <cmath>
@@ -14,7 +13,6 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
-#include <stdexcept>
 #include <utility>
 
 namespace sme {
@@ -25,56 +23,79 @@ inline Value& fastReg(Frame& frame, size_t index) {
     return frame.regs[index];
 }
 
-int checkedIntAdd(int x, int y, int line) {
+}  // анонимное пространство имён
+
+Machine::Machine(Engine& engine, State& state) : _engine(engine), _state(state) {}
+
+int Machine::checkedIntAdd(int x, int y, int line) {
     if ((y > 0 && x > std::numeric_limits<int>::max() - y) ||
         (y < 0 && x < std::numeric_limits<int>::min() - y)) {
-        throw RError("integer overflow", line);
+        _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow", line);
+        return 0;
     }
     return x + y;
 }
 
-int checkedIntSub(int x, int y, int line) {
+int Machine::checkedIntSub(int x, int y, int line) {
     if ((y < 0 && x > std::numeric_limits<int>::max() + y) ||
         (y > 0 && x < std::numeric_limits<int>::min() + y)) {
-        throw RError("integer overflow", line);
+        _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow", line);
+        return 0;
     }
     return x - y;
 }
 
-int checkedIntMul(int x, int y, int line) {
+int Machine::checkedIntMul(int x, int y, int line) {
     if (x == 0 || y == 0) return 0;
     if ((x == -1 && y == std::numeric_limits<int>::min()) ||
         (y == -1 && x == std::numeric_limits<int>::min())) {
-        throw RError("integer overflow", line);
+        _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow", line);
+        return 0;
     }
     if ((x > 0 && y > 0 && x > std::numeric_limits<int>::max() / y) ||
         (x > 0 && y < 0 && y < std::numeric_limits<int>::min() / x) ||
         (x < 0 && y > 0 && x < std::numeric_limits<int>::min() / y) ||
         (x < 0 && y < 0 && x < std::numeric_limits<int>::max() / y)) {
-        throw RError("integer overflow", line);
+        _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow", line);
+        return 0;
     }
     return x * y;
 }
 
-Value intBinary(Op op, int x, int y, int line) {
+Value Machine::intBinary(Op op, int x, int y, int line) {
     switch (op) {
     case Op::Add: return Value::Integer(checkedIntAdd(x, y, line));
     case Op::Sub: return Value::Integer(checkedIntSub(x, y, line));
     case Op::Mul: return Value::Integer(checkedIntMul(x, y, line));
     case Op::Div:
-        if (y == 0) throw RError("division by zero", line);
-        if (x == std::numeric_limits<int>::min() && y == -1) throw RError("integer overflow", line);
+        if (y == 0) {
+            _state.RecordRuntimeError(error::Code::VM_DIVISION_BY_ZERO, "division by zero", line);
+            return Value::Null();
+        }
+        if (x == std::numeric_limits<int>::min() && y == -1) {
+            _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow", line);
+            return Value::Null();
+        }
         return Value::Integer(x / y);
     case Op::Mod:
-        if (y == 0) throw RError("division by zero", line);
-        if (x == std::numeric_limits<int>::min() && y == -1) throw RError("integer overflow", line);
+        if (y == 0) {
+            _state.RecordRuntimeError(error::Code::VM_DIVISION_BY_ZERO, "division by zero", line);
+            return Value::Null();
+        }
+        if (x == std::numeric_limits<int>::min() && y == -1) {
+            _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow", line);
+            return Value::Null();
+        }
         return Value::Integer(x % y);
     case Op::BitAnd: return Value::Integer(x & y);
     case Op::BitOr: return Value::Integer(x | y);
     case Op::BitXor: return Value::Integer(x ^ y);
     case Op::Shl:
     case Op::Shr:
-        if (y < 0 || y >= 31) throw RError("shift out of range", line);
+        if (y < 0 || y >= 31) {
+            _state.RecordRuntimeError(error::Code::VM_SHIFT_OUT_OF_RANGE, "shift out of range", line);
+            return Value::Null();
+        }
         if (op == Op::Shl) return Value::Integer(static_cast<int>(static_cast<uint32_t>(x) << y));
         return Value::Integer(static_cast<int>(static_cast<uint32_t>(x) >> static_cast<uint32_t>(y)));
     case Op::CmpEq: return Value::Integer(x == y ? 1 : 0);
@@ -86,38 +107,25 @@ Value intBinary(Op op, int x, int y, int line) {
     case Op::LogicAnd: return Value::Integer((x != 0 && y != 0) ? 1 : 0);
     case Op::LogicOr: return Value::Integer((x != 0 || y != 0) ? 1 : 0);
     default:
-        throw RError("internal operator fault", line);
+        _state.RecordRuntimeError(error::Code::VM_INTERNAL_OPERATOR_FAULT, "internal operator fault", line);
+        return Value::Null();
     }
 }
 
-int narrowInt(double number, int line) {
+int Machine::narrowInt(double number, int line) {
     if (!std::isfinite(number) ||
         number < static_cast<double>(std::numeric_limits<int>::min()) ||
         number >= static_cast<double>(std::numeric_limits<int>::max()) + 1.0) {
-        throw RError("integer overflow", line);
+        _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow", line);
+        return 0;
     }
     return static_cast<int>(number);
 }
 
-std::optional<int> asInt(const Value& value) {
-    if (const auto* integer = std::get_if<int>(&value)) return *integer;
-    if (const auto* flag = std::get_if<bool>(&value)) return *flag ? 1 : 0;
-    return std::nullopt;
-}
-
-const std::string* stringData(const Value& value) {
-    if (const auto* text = std::get_if<std::string>(&value)) return text;
-    if (const auto* text = std::get_if<SharedString>(&value); text && *text) return text->get();
-    return nullptr;
-}
-
-}  // анонимное пространство имён
-
-Machine::Machine(Engine& engine, State& state) : _engine(engine), _state(state) {}
-
 Value Machine::materialize(const Chunk& chunk, size_t constant, int line) {
     if (constant >= chunk.constants.size()) {
-        throw RError("internal constant fault", line);
+        _state.RecordRuntimeError(error::Code::VM_INTERNAL_CONSTANT_FAULT, "internal constant fault", line);
+        return Value::Null();
     }
     const Constant& value = chunk.constants[constant];
     if (std::holds_alternative<std::monostate>(value)) return Value::Null();
@@ -126,7 +134,8 @@ Value Machine::materialize(const Chunk& chunk, size_t constant, int line) {
     if (const auto* flag = std::get_if<bool>(&value)) return Value::Boolean(*flag);
     if (const auto* text = std::get_if<std::string>(&value)) return Value::String(*text);
     if (std::holds_alternative<std::nullptr_t>(value)) return Value::Pointer();
-    throw RError("internal constant fault", line);
+    _state.RecordRuntimeError(error::Code::VM_INTERNAL_CONSTANT_FAULT, "internal constant fault", line);
+    return Value::Null();
 }
 
 bool Machine::equals(const Value& lhs, const Value& rhs) {
@@ -188,7 +197,8 @@ int Machine::compare(const Value& lhs, const Value& rhs, int line) {
     auto left = lhs.AsNumber();
     auto right = rhs.AsNumber();
     if (!left || !right) {
-        throw RError("comparison expects numbers", line);
+        _state.RecordRuntimeError(error::Code::VM_COMPARISON_EXPECTS_NUMBERS, "comparison expects numbers", line);
+        return 0;
     }
     if (*left < *right) return -1;
     if (*left > *right) return 1;
@@ -202,19 +212,22 @@ Value Machine::unary(Op op, const Value& value, int line) {
     if (op == Op::Neg) {
         if (const auto* integer = std::get_if<int>(&value)) {
             if (*integer == std::numeric_limits<int>::min()) {
-                throw RError("integer overflow", line);
+                _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow", line);
+                return Value::Null();
             }
             return sme::Value::Integer(-*integer);
         }
         if (const auto* real = std::get_if<float>(&value)) {
             return sme::Value::Float(-*real);
         }
-        throw RError("negation expects a number", line);
+        _state.RecordRuntimeError(error::Code::VM_NEGATION_EXPECTS_NUMBER, "negation expects a number", line);
+        return Value::Null();
     }
     if (const auto* integer = std::get_if<int>(&value)) {
         return sme::Value::Integer(~*integer);
     }
-    throw RError("bitwise not expects an int", line);
+    _state.RecordRuntimeError(error::Code::VM_BITWISE_NOT_EXPECTS_INT, "bitwise not expects an int", line);
+    return Value::Null();
 }
 
 Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
@@ -235,8 +248,8 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
         return Value(std::in_place_type<TableHandle>, std::move(joined));
     }
     if (op == Op::Add) {
-        const std::string* leftText = stringData(lhs);
-        const std::string* rightText = stringData(rhs);
+        const std::string* leftText = lhs.AsStringData();
+        const std::string* rightText = rhs.AsStringData();
         if (leftText || rightText) {
             std::string leftStorage;
             std::string rightStorage;
@@ -255,7 +268,8 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
         auto left = lhs.AsNumber();
         auto right = rhs.AsNumber();
         if (!left || !right) {
-            throw RError("comparison expects numbers", line);
+            _state.RecordRuntimeError(error::Code::VM_COMPARISON_EXPECTS_NUMBERS, "comparison expects numbers", line);
+            return Value::Null();
         }
         if (std::isnan(*left) || std::isnan(*right)) {
             return Value::Integer(0);
@@ -275,7 +289,8 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
     auto left = lhs.AsNumber();
     auto right = rhs.AsNumber();
     if (!left || !right) {
-        throw RError("operator expects numbers", line);
+        _state.RecordRuntimeError(error::Code::VM_OPERATOR_EXPECTS_NUMBERS, "operator expects numbers", line);
+        return Value::Null();
     }
     const bool floats = lhs.IsFloat() || rhs.IsFloat();
     const double a = *left;
@@ -283,8 +298,8 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
 
     auto bothInts = [&]() -> std::optional<std::pair<int, int>> {
         if (floats) return std::nullopt;
-        auto x = asInt(lhs);
-        auto y = asInt(rhs);
+        auto x = lhs.AsInteger();
+        auto y = rhs.AsInteger();
         if (!x || !y) return std::nullopt;
         return std::pair{*x, *y};
     };
@@ -292,7 +307,8 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
     if (!floats && (op == Op::Add || op == Op::Sub || op == Op::Mul)) {
         auto pair = bothInts();
         if (!pair) {
-            throw RError("operator expects numbers", line);
+            _state.RecordRuntimeError(error::Code::VM_OPERATOR_EXPECTS_NUMBERS, "operator expects numbers", line);
+            return Value::Null();
         }
         const int64_t x = pair->first;
         const int64_t y = pair->second;
@@ -301,7 +317,8 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
         else if (op == Op::Sub) z = x - y;
         else z = x * y;
         if (z > std::numeric_limits<int>::max() || z < std::numeric_limits<int>::min()) {
-            throw RError("integer overflow", line);
+            _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow", line);
+            return Value::Null();
         }
         return Value::Integer(static_cast<int>(z));
     }
@@ -312,22 +329,30 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
     case Op::Mul: return Value::Float(static_cast<float>(a * b));
     case Op::Div: {
         // INT_MIN / -1 непредставимо в int32. То же проверяется у остатка.
-        if (b == 0) throw RError("division by zero", line);
+        if (b == 0) {
+            _state.RecordRuntimeError(error::Code::VM_DIVISION_BY_ZERO, "division by zero", line);
+            return Value::Null();
+        }
         if (!floats) {
             auto pair = *bothInts();
             if (pair.first == std::numeric_limits<int>::min() && pair.second == -1) {
-                throw RError("integer overflow", line);
+                _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow", line);
+                return Value::Null();
             }
             return Value::Integer(pair.first / pair.second);
         }
         return Value::Float(static_cast<float>(a / b));
     }
     case Op::Mod: {
-        if (b == 0) throw RError("division by zero", line);
+        if (b == 0) {
+            _state.RecordRuntimeError(error::Code::VM_DIVISION_BY_ZERO, "division by zero", line);
+            return Value::Null();
+        }
         if (!floats) {
             auto pair = *bothInts();
             if (pair.first == std::numeric_limits<int>::min() && pair.second == -1) {
-                throw RError("integer overflow", line);
+                _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow", line);
+                return Value::Null();
             }
             return Value::Integer(pair.first % pair.second);
         }
@@ -339,7 +364,10 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
     case Op::Shl:
     case Op::Shr: {
         auto pair = bothInts();
-        if (!pair) throw RError("bitwise operator expects ints", line);
+        if (!pair) {
+            _state.RecordRuntimeError(error::Code::VM_BITWISE_OPERATOR_EXPECTS_INTS, "bitwise operator expects ints", line);
+            return Value::Null();
+        }
         int x = pair->first;
         int y = pair->second;
         switch (op) {
@@ -350,7 +378,10 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
         case Op::Shr:
             // Сдвиг логический, через uint32. Бит 31 поставить нельзя: счётчик только 0..30.
             // Поэтому -8 >> 1 — это 2147483644, а не арифметические -4.
-            if (y < 0 || y >= 31) throw RError("shift out of range", line);
+            if (y < 0 || y >= 31) {
+                _state.RecordRuntimeError(error::Code::VM_SHIFT_OUT_OF_RANGE, "shift out of range", line);
+                return Value::Null();
+            }
             if (op == Op::Shl) {
                 return Value::Integer(static_cast<int>(static_cast<uint32_t>(x) << y));
             }
@@ -362,16 +393,20 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
     default:
         break;
     }
-    throw RError("internal operator fault", line);
+    _state.RecordRuntimeError(error::Code::VM_INTERNAL_OPERATOR_FAULT, "internal operator fault", line);
+    return Value::Null();
 }
 
-Value Machine::run(size_t function, std::span<const Value> args) {
+error::Result<Value> Machine::run(size_t function, std::span<const Value> args) {
+    if (_state.hasRuntimeError) {
+        return {Value::Null(), _state.GetRuntimeError()};
+    }
     if (function >= _state.functions.size()) {
-        throw RError("unknown function");
+        return {Value::Null(), _state.MakeRuntimeError(error::Code::VM_UNKNOWN_FUNCTION, "unknown function")};
     }
     const Chunk& chunk = _state.functions[function];
     if (_state.runStack.size() >= SME_MAX_CALL_DEPTH) {
-        throw RError("script call nested too deeply");
+        return {Value::Null(), _state.MakeRuntimeError(error::Code::VM_CALL_DEPTH_EXCEEDED, "script call nested too deeply")};
     }
 
     Frame frame;
@@ -386,7 +421,7 @@ Value Machine::run(size_t function, std::span<const Value> args) {
     RunState fresh;
     fresh.frames.push_back(std::move(frame));
     _state.runStack.push_back(std::move(fresh));
-    // Снимает этот RunState при return и при исключении. stop кадр оставляет.
+    // Снимает этот RunState при return/ошибке; stop кадр оставляет.
     struct Guard {
         State& state;
         bool active = true;
@@ -397,17 +432,20 @@ Value Machine::run(size_t function, std::span<const Value> args) {
         }
         void keep() { active = false; }
     } guard{_state};
-    std::optional<Value> result = execute();
-    if (!result) {
+    auto result = execute();
+    if (result.error) {
+        return {Value::Null(), std::move(result.error)};
+    }
+    if (!result.has_value()) {
         guard.keep();
         return Value::Null();
     }
-    return result.value();
+    return std::move(*result);
 }
 
-Value Machine::resume() {
+error::Result<Value> Machine::resume() {
     if (_state.runStack.empty()) {
-        throw RError("nothing to resume");
+        return {Value::Null(), _state.MakeRuntimeError(error::Code::VM_NOTHING_TO_RESUME, "nothing to resume")};
     }
     // Тот же страж, что у run, но кадр уже лежит на стеке: его положил остановившийся call.
     struct Guard {
@@ -420,12 +458,15 @@ Value Machine::resume() {
         }
         void keep() { active = false; }
     } guard{_state};
-    std::optional<Value> result = execute();
-    if (!result) {
+    auto result = execute();
+    if (result.error) {
+        return {Value::Null(), std::move(result.error)};
+    }
+    if (!result.has_value()) {
         guard.keep();
         return Value::Null();
     }
-    return result.value();
+    return std::move(*result);
 }
 
 namespace {
@@ -474,39 +515,52 @@ bool createsCycle(const Value& value, const TableHandle& destination) {
     return reachesTable(value, destination.get(), visited, visitedLinks);
 }
 
-Value& referenced(State& state, const Value& value, int line) {
+}  // анонимное пространство имён
+
+Value* Machine::referenced(const Value& value, int line) {
     if (!value.IsReference()) {
-        throw RError("value is not a reference", line);
+        _state.RecordRuntimeError(error::Code::VM_VALUE_NOT_REFERENCE, "value is not a reference", line);
+        return nullptr;
     }
     if (const auto* link = std::get_if<SharedValue>(&value)) {
-        if (!*link) throw RError("dangling reference", line);
-        return **link;
+        if (!*link) {
+            _state.RecordRuntimeError(error::Code::VM_DANGLING_REFERENCE, "dangling reference", line);
+            return nullptr;
+        }
+        return link->get();
     }
     if (const auto* indexed = std::get_if<IndexedReference>(&value)) {
         if (!indexed->container) {
-            throw RError("dangling reference", line);
+            _state.RecordRuntimeError(error::Code::VM_DANGLING_REFERENCE, "dangling reference", line);
+            return nullptr;
         }
         if (indexed->index >= indexed->container->size()) {
-            throw RError("dangling reference", line);
+            _state.RecordRuntimeError(error::Code::VM_DANGLING_REFERENCE, "dangling reference", line);
+            return nullptr;
         }
-        return (*indexed->container)[indexed->index];
+        return &(*indexed->container)[indexed->index];
     }
     if (const auto* global = std::get_if<GlobalReference>(&value)) {
-        if (global->slot >= state.globals.size()) {
-            throw RError("dangling reference", line);
+        if (global->slot >= _state.globals.size()) {
+            _state.RecordRuntimeError(error::Code::VM_DANGLING_REFERENCE, "dangling reference", line);
+            return nullptr;
         }
-        return state.globals[global->slot].value;
+        return &_state.globals[global->slot].value;
     }
     const LocalReference& local = std::get<LocalReference>(value);
-    if (state.runStack.empty() || local.frame >= state.runStack.back().frames.size()) {
-        throw RError("dangling reference", line);
+    if (_state.runStack.empty() || local.frame >= _state.runStack.back().frames.size()) {
+        _state.RecordRuntimeError(error::Code::VM_DANGLING_REFERENCE, "dangling reference", line);
+        return nullptr;
     }
-    Frame& owner = state.runStack.back().frames[local.frame];
+    Frame& owner = _state.runStack.back().frames[local.frame];
     if (owner.generation != local.frameGeneration || local.slot >= owner.regs.size()) {
-        throw RError("dangling reference", line);
+        _state.RecordRuntimeError(error::Code::VM_DANGLING_REFERENCE, "dangling reference", line);
+        return nullptr;
     }
-    return owner.regs[local.slot];
+    return &owner.regs[local.slot];
 }
+
+namespace {
 
 // Как gso_cast в GS9: формат — строка printf, буфер 127 символов.
 std::string castIntToString(int value, const std::string& format) {
@@ -540,18 +594,28 @@ float castStringToFloat(const std::string& text, const std::string& format) {
 // Один шаг — одна инструкция верхнего кадра. bump двигает ip того кадра,
 // который сейчас сверху: после Call сверху уже другой кадр, поэтому ip
 // вызывающего увеличивают до push. write пишет в текущий верхний кадр.
-std::optional<Value> Machine::execute() {
+error::Result<std::optional<Value>> Machine::execute() {
+    auto pendingError = [&]() -> error::Result<std::optional<Value>> {
+        return {std::nullopt, _state.GetRuntimeError()};
+    };
+    auto failure = [&](error::Code code, std::string message, int line = 0) {
+        _state.RecordRuntimeError(code, message, line);
+        return pendingError();
+    };
     while (true) {
         RunState& active = _state.runStack.back();
         if (active.frames.empty()) {
-            throw RError("call stack underflow");
+            return failure(error::Code::VM_CALL_STACK_UNDERFLOW, "call stack underflow");
         }
         Frame& frame = active.frames.back();
         const Chunk& chunk = _state.functions[frame.function];
         if (frame.ip >= chunk.code.size()) {
-            throw RError("function '" + chunk.name + "' ran out of instructions");
+            return failure(error::Code::VM_FUNCTION_RAN_OUT_OF_INSTRUCTIONS,
+                "function '" + chunk.name + "' ran out of instructions");
         }
         const Instruction& ins = chunk.code[frame.ip];
+        frame.currentInstruction = frame.ip;
+        frame.currentLine = ins.line;
 
         auto bump = [&] { frame.ip++; };
         auto write = [&](uint16_t slot, Value value) { frame.regs[slot] = std::move(value); };
@@ -580,12 +644,12 @@ std::optional<Value> Machine::execute() {
             break;
         }
         case Op::LoadGlobal:
-            if (ins.b >= _state.globals.size()) throw RError("internal global fault", ins.line);
+            if (ins.b >= _state.globals.size()) return failure(error::Code::VM_INTERNAL_GLOBAL_FAULT, "internal global fault", ins.line);
             write(ins.a, _state.globals[ins.b].value);
             bump();
             break;
         case Op::StoreGlobal: {
-            if (ins.a >= _state.globals.size()) throw RError("internal global fault", ins.line);
+            if (ins.a >= _state.globals.size()) return failure(error::Code::VM_INTERNAL_GLOBAL_FAULT, "internal global fault", ins.line);
             Value incoming = fastReg(frame, ins.b);
             if (!incoming.IsNull()) {
                 _state.globals[ins.a].value = std::move(incoming);
@@ -594,9 +658,10 @@ std::optional<Value> Machine::execute() {
             break;
         }
         case Op::Stop:
+            if (_state.hasRuntimeError) return pendingError();
             // ip уже за stop, поэтому stopped() узнаёт паузу по предыдущей инструкции.
             bump();
-            return std::nullopt;
+            return {std::nullopt};
         case Op::Typeof:
             write(ins.a, Value::Integer(fastReg(frame, ins.b).TypeCode()));
             bump();
@@ -634,10 +699,12 @@ std::optional<Value> Machine::execute() {
             break;
         }
         case Op::Jump:
+            if (_state.hasRuntimeError) return pendingError();
             frame.ip = ins.a;
             break;
         case Op::JumpIfFalse:
         case Op::JumpIfTrue: {
+            if (_state.hasRuntimeError) return pendingError();
             bool flag = _state.truthy(fastReg(frame, ins.a));
             if ((ins.op == Op::JumpIfFalse && !flag) || (ins.op == Op::JumpIfTrue && flag)) {
                 frame.ip = ins.b;
@@ -647,6 +714,7 @@ std::optional<Value> Machine::execute() {
             break;
         }
         case Op::JumpIfCmpFalse: {
+            if (_state.hasRuntimeError) return pendingError();
             const Value& lhs = fastReg(frame, ins.a);
             const Value& rhs = fastReg(frame, ins.b);
             const Op op = static_cast<Op>(ins.c);
@@ -659,7 +727,7 @@ std::optional<Value> Machine::execute() {
                     else if (op == Op::CmpLe) result = *left <= *right;
                     else if (op == Op::CmpGt) result = *left > *right;
                     else if (op == Op::CmpGe) result = *left >= *right;
-                    else throw RError("internal operator fault", ins.line);
+                    else return failure(error::Code::VM_INTERNAL_OPERATOR_FAULT, "internal operator fault", ins.line);
                 } else if (op == Op::CmpEq) {
                     result = equals(lhs, rhs);
                 } else if (op == Op::CmpNe) {
@@ -667,13 +735,13 @@ std::optional<Value> Machine::execute() {
                 } else {
                     const auto leftNumber = lhs.AsNumber();
                     const auto rightNumber = rhs.AsNumber();
-                    if (!leftNumber || !rightNumber) throw RError("comparison expects numbers", ins.line);
+                    if (!leftNumber || !rightNumber) return failure(error::Code::VM_COMPARISON_EXPECTS_NUMBERS, "comparison expects numbers", ins.line);
                     if (!std::isnan(*leftNumber) && !std::isnan(*rightNumber)) {
                         if (op == Op::CmpLt) result = *leftNumber < *rightNumber;
                         else if (op == Op::CmpLe) result = *leftNumber <= *rightNumber;
                         else if (op == Op::CmpGt) result = *leftNumber > *rightNumber;
                         else if (op == Op::CmpGe) result = *leftNumber >= *rightNumber;
-                        else throw RError("internal operator fault", ins.line);
+                        else return failure(error::Code::VM_INTERNAL_OPERATOR_FAULT, "internal operator fault", ins.line);
                     }
                 }
             } else if (op == Op::CmpEq) {
@@ -683,13 +751,13 @@ std::optional<Value> Machine::execute() {
             } else {
                 const auto left = lhs.AsNumber();
                 const auto right = rhs.AsNumber();
-                if (!left || !right) throw RError("comparison expects numbers", ins.line);
+                if (!left || !right) return failure(error::Code::VM_COMPARISON_EXPECTS_NUMBERS, "comparison expects numbers", ins.line);
                 if (!std::isnan(*left) && !std::isnan(*right)) {
                     if (op == Op::CmpLt) result = *left < *right;
                     else if (op == Op::CmpLe) result = *left <= *right;
                     else if (op == Op::CmpGt) result = *left > *right;
                     else if (op == Op::CmpGe) result = *left >= *right;
-                    else throw RError("internal operator fault", ins.line);
+                    else return failure(error::Code::VM_INTERNAL_OPERATOR_FAULT, "internal operator fault", ins.line);
                 }
             }
             if (!result) frame.ip = ins.e;
@@ -697,6 +765,7 @@ std::optional<Value> Machine::execute() {
             break;
         }
         case Op::JumpIfCmpImmFalse: {
+            if (_state.hasRuntimeError) return pendingError();
             const Value& lhs = fastReg(frame, ins.a);
             const Op op = static_cast<Op>(ins.c);
             const int immediate = static_cast<int16_t>(ins.d);
@@ -708,7 +777,7 @@ std::optional<Value> Machine::execute() {
                 else if (op == Op::CmpLe) result = *integer <= immediate;
                 else if (op == Op::CmpGt) result = *integer > immediate;
                 else if (op == Op::CmpGe) result = *integer >= immediate;
-                else throw RError("internal operator fault", ins.line);
+                else return failure(error::Code::VM_INTERNAL_OPERATOR_FAULT, "internal operator fault", ins.line);
             } else if (op == Op::CmpEq || op == Op::CmpNe) {
                 bool equal = false;
                 if (const auto number = lhs.AsNumber()) {
@@ -717,14 +786,14 @@ std::optional<Value> Machine::execute() {
                 result = op == Op::CmpEq ? equal : !equal;
             } else {
                 const auto left = lhs.AsNumber();
-                if (!left) throw RError("comparison expects numbers", ins.line);
+                if (!left) return failure(error::Code::VM_COMPARISON_EXPECTS_NUMBERS, "comparison expects numbers", ins.line);
                 const float right = static_cast<float>(immediate);
                 if (!std::isnan(*left)) {
                     if (op == Op::CmpLt) result = *left < right;
                     else if (op == Op::CmpLe) result = *left <= right;
                     else if (op == Op::CmpGt) result = *left > right;
                     else if (op == Op::CmpGe) result = *left >= right;
-                    else throw RError("internal operator fault", ins.line);
+                    else return failure(error::Code::VM_INTERNAL_OPERATOR_FAULT, "internal operator fault", ins.line);
                 }
             }
             if (!result) frame.ip = ins.e;
@@ -732,6 +801,7 @@ std::optional<Value> Machine::execute() {
             break;
         }
         case Op::JumpIfNotLe: {
+            if (_state.hasRuntimeError) return pendingError();
             const Value& lhs = fastReg(frame, ins.a);
             const Value& rhs = fastReg(frame, ins.b);
             if (const auto* left = std::get_if<int>(&lhs); left) {
@@ -743,16 +813,17 @@ std::optional<Value> Machine::execute() {
             }
             const auto left = lhs.AsNumber();
             const auto right = rhs.AsNumber();
-            if (!left || !right) throw RError("comparison expects numbers", ins.line);
+            if (!left || !right) return failure(error::Code::VM_COMPARISON_EXPECTS_NUMBERS, "comparison expects numbers", ins.line);
             if (!(*left <= *right)) frame.ip = ins.c;
             else bump();
             break;
         }
         case Op::IncJumpLe: {
+            if (_state.hasRuntimeError) return pendingError();
             const Value& limit = fastReg(frame, ins.b);
             Value& counter = frame.regs[ins.a];
             if (const auto* left = std::get_if<int>(&counter); left) {
-                if (*left == std::numeric_limits<int>::max()) throw RError("integer overflow", ins.line);
+                if (*left == std::numeric_limits<int>::max()) return failure(error::Code::VM_INTEGER_OVERFLOW, "integer overflow", ins.line);
                 const int incremented = *left + 1;
                 counter = incremented;
                 if (const auto* right = std::get_if<int>(&limit)) {
@@ -761,13 +832,12 @@ std::optional<Value> Machine::execute() {
                     break;
                 }
                 const auto right = limit.AsNumber();
-                if (!right) throw RError("comparison expects numbers", ins.line);
+                if (!right) return failure(error::Code::VM_COMPARISON_EXPECTS_NUMBERS, "comparison expects numbers", ins.line);
                 if (static_cast<double>(incremented) <= *right) frame.ip = ins.c;
                 else bump();
                 break;
             }
-            Value next = binary(Op::Add, counter, Value::Integer(1), ins.line);
-            counter = std::move(next);
+            counter = binary(Op::Add, counter, Value::Integer(1), ins.line);
             if (const auto* left = std::get_if<int>(&counter); left) {
                 if (const auto* right = std::get_if<int>(&limit); right) {
                     if (*left <= *right) frame.ip = ins.c;
@@ -777,25 +847,29 @@ std::optional<Value> Machine::execute() {
             }
             const auto left = counter.AsNumber();
             const auto right = limit.AsNumber();
-            if (!left || !right) throw RError("comparison expects numbers", ins.line);
+            if (!left || !right) return failure(error::Code::VM_COMPARISON_EXPECTS_NUMBERS, "comparison expects numbers", ins.line);
             if (*left <= *right) frame.ip = ins.c;
             else bump();
             break;
         }
         case Op::Call:
         case Op::CallNative: {
+            if (_state.hasRuntimeError) return pendingError();
             if (ins.d > 0 && static_cast<size_t>(ins.c) + ins.d > frame.regs.size()) {
-                throw RError("internal argument fault", ins.line);
+                return failure(error::Code::VM_INTERNAL_ARGUMENT_FAULT, "internal argument fault", ins.line);
             }
             const std::span<const Value> args(frame.regs.data() + ins.c, ins.d);
             bump();
             if (ins.op == Op::CallNative) {
-                if (ins.b >= _state.natives.size()) throw RError("internal native fault", ins.line);
+                if (ins.b >= _state.natives.size()) return failure(error::Code::VM_INTERNAL_NATIVE_FAULT, "internal native fault", ins.line);
                 Value result = _state.natives[ins.b](_engine, args);
+                if (_state.hasRuntimeError) {
+                    return pendingError();
+                }
                 _state.runStack.back().frames.back().regs[ins.a] = std::move(result);
                 break;
             }
-            if (ins.b >= _state.functions.size()) throw RError("internal function fault", ins.line);
+            if (ins.b >= _state.functions.size()) return failure(error::Code::VM_INTERNAL_FUNCTION_FAULT, "internal function fault", ins.line);
             const Chunk& callee = _state.functions[ins.b];
             Frame next;
             next.function = ins.b;
@@ -810,17 +884,18 @@ std::optional<Value> Machine::execute() {
             }
             _state.runStack.back().frames.push_back(std::move(next));
             if (_state.runStack.back().frames.size() > SME_MAX_RECURSION_DEPTH) {
-                throw RError("script recursion is too deep");
+                return failure(error::Code::VM_RECURSION_DEPTH_EXCEEDED, "script recursion is too deep");
             }
             break;
         }
         case Op::Return: {
+            if (_state.hasRuntimeError) return pendingError();
             Value result = fastReg(frame, ins.a);
             bool writeParent = frame.writesParent;
             uint16_t dest = frame.parentDest;
             _state.runStack.back().frames.pop_back();
             if (_state.runStack.back().frames.empty()) {
-                return result;
+                return {std::optional<Value>(std::move(result))};
             }
             if (writeParent) {
                 _state.runStack.back().frames.back().regs[dest] = std::move(result);
@@ -843,18 +918,18 @@ std::optional<Value> Machine::execute() {
             Value object = fastReg(frame, ins.b);
             Value index = fastReg(frame, ins.c);
             const auto* slot = std::get_if<int>(&index);
-            if (!slot || *slot < 0) throw RError("index must be a non-negative int", ins.line);
-            if (const auto* text = stringData(object)) {
-                if (static_cast<size_t>(*slot) >= text->size()) throw RError("string index out of range", ins.line);
+            if (!slot || *slot < 0) return failure(error::Code::VM_INDEX_MUST_BE_NON_NEGATIVE_INT, "index must be a non-negative int", ins.line);
+            if (const auto* text = object.AsStringData()) {
+                if (static_cast<size_t>(*slot) >= text->size()) return failure(error::Code::VM_STRING_INDEX_OUT_OF_RANGE, "string index out of range", ins.line);
                 write(ins.a, Value::String(std::string(1, (*text)[static_cast<size_t>(*slot)])));
                 bump();
                 break;
             }
             if (!object.IsTable()) {
-                throw RError("value cannot be indexed", ins.line);
+                return failure(error::Code::VM_VALUE_NOT_INDEXABLE, "value cannot be indexed", ins.line);
             }
             const TableHandle& table = std::get<TableHandle>(object);
-            if (static_cast<size_t>(*slot) >= table->size()) throw RError("table index out of range", ins.line);
+            if (static_cast<size_t>(*slot) >= table->size()) return failure(error::Code::VM_TABLE_INDEX_OUT_OF_RANGE, "table index out of range", ins.line);
             write(ins.a, (*table)[static_cast<size_t>(*slot)]);
             bump();
             break;
@@ -864,11 +939,11 @@ std::optional<Value> Machine::execute() {
             Value value = fastReg(frame, ins.c);
             Value object = fastReg(frame, ins.a);
             const auto* slot = std::get_if<int>(&index);
-            if (!slot || *slot < 0) throw RError("index must be a non-negative int", ins.line);
-            if (!object.IsTable()) throw RError("value cannot be indexed", ins.line);
+            if (!slot || *slot < 0) return failure(error::Code::VM_INDEX_MUST_BE_NON_NEGATIVE_INT, "index must be a non-negative int", ins.line);
+            if (!object.IsTable()) return failure(error::Code::VM_VALUE_NOT_INDEXABLE, "value cannot be indexed", ins.line);
             TableHandle container = std::get<TableHandle>(object);
-            if (static_cast<size_t>(*slot) >= container->size()) throw RError("table index out of range", ins.line);
-            if (createsCycle(value, container)) throw RError("cyclic table ownership is not supported", ins.line);
+            if (static_cast<size_t>(*slot) >= container->size()) return failure(error::Code::VM_TABLE_INDEX_OUT_OF_RANGE, "table index out of range", ins.line);
+            if (createsCycle(value, container)) return failure(error::Code::VM_CYCLIC_TABLE_OWNERSHIP, "cyclic table ownership is not supported", ins.line);
             (*container)[static_cast<size_t>(*slot)] = std::move(value);
             bump();
             break;
@@ -876,25 +951,36 @@ std::optional<Value> Machine::execute() {
         case Op::GetProp:
         case Op::SetProp:
         case Op::CallMethod: {
+            if (_state.hasRuntimeError) return pendingError();
             const std::string_view name = _state.constantString(chunk, ins.op == Op::SetProp ? ins.b : ins.c, ins.line);
+            if (_state.hasRuntimeError) return pendingError();
             Value object = fastReg(frame, ins.op == Op::SetProp ? ins.a : ins.b);
-            if (!object.IsObject()) throw RError("value has no properties", ins.line);
+            if (!object.IsObject()) return failure(error::Code::VM_VALUE_HAS_NO_PROPERTIES, "value has no properties", ins.line);
             IScriptObject* target = std::get<Handle>(object).get();
             if (ins.op == Op::GetProp) {
-                Value result = target->GetProperty(_engine, name);
-                write(ins.a, std::move(result));
                 bump();
+                Value result = target->GetProperty(_engine, name);
+                if (_state.hasRuntimeError) {
+                    return pendingError();
+                }
+                _state.runStack.back().frames.back().regs[ins.a] = std::move(result);
                 break;
             }
             if (ins.op == Op::SetProp) {
                 Value incoming = fastReg(frame, ins.c);
-                target->SetProperty(_engine, name, incoming);
                 bump();
+                target->SetProperty(_engine, name, incoming);
+                if (_state.hasRuntimeError) {
+                    return pendingError();
+                }
                 break;
             }
             const std::span<const Value> args(frame.regs.data() + ins.d, ins.e);
             bump();
             Value result = target->Call(_engine, name, args);
+            if (_state.hasRuntimeError) {
+                return pendingError();
+            }
             _state.runStack.back().frames.back().regs[ins.a] = std::move(result);
             break;
         }
@@ -902,9 +988,11 @@ std::optional<Value> Machine::execute() {
             // Ссылочный строковый слот получает разделяемое стабильное хранилище.
             auto& frames = _state.runStack.back().frames;
             promoteString(frames.back().regs[ins.b]);
+            const size_t referenceId = _state.freshReferenceId();
+            if (_state.hasRuntimeError) return pendingError();
             write(ins.a, Value(std::in_place_type<LocalReference>,
                 LocalReference{static_cast<uint32_t>(frames.size() - 1), frames.back().generation,
-                    ins.b, _state.freshReferenceId()}));
+                    ins.b, referenceId}));
             bump();
             break;
         }
@@ -913,31 +1001,36 @@ std::optional<Value> Machine::execute() {
             const Value& index = fastReg(frame, ins.c);
             const auto* slot = std::get_if<int>(&index);
             if (!slot || *slot < 0 || !object.IsTable()) {
-                throw RError("address expects a table element", ins.line);
+                return failure(error::Code::VM_ADDRESS_EXPECTS_TABLE_ELEMENT, "address expects a table element", ins.line);
             }
             const TableHandle& container = std::get<TableHandle>(object);
             const uint32_t tableIndex = static_cast<uint32_t>(*slot);
             if (tableIndex < container->size()) {
                 promoteString((*container)[tableIndex]);
             }
+            const size_t referenceId = _state.freshReferenceId();
+            if (_state.hasRuntimeError) return pendingError();
             write(ins.a, Value(std::in_place_type<IndexedReference>,
-                IndexedReference{container, tableIndex, _state.freshReferenceId()}));
+                IndexedReference{container, tableIndex, referenceId}));
             bump();
             break;
         }
         case Op::MakeRefGlobal: {
             const size_t slot = ins.b;
             if (slot < _state.globals.size()) promoteString(_state.globals[slot].value);
+            const size_t referenceId = _state.freshReferenceId();
+            if (_state.hasRuntimeError) return pendingError();
             write(ins.a, Value(std::in_place_type<GlobalReference>,
-                GlobalReference{static_cast<uint32_t>(slot), _state.freshReferenceId()}));
+                GlobalReference{static_cast<uint32_t>(slot), referenceId}));
             bump();
             break;
         }
         case Op::LoadRef: {
             Value ref = fastReg(frame, ins.b);
-            Value& target = referenced(_state, ref, ins.line);
-            promoteString(target);
-            write(ins.a, target);
+            Value* target = referenced(ref, ins.line);
+            if (!target) return pendingError();
+            promoteString(*target);
+            write(ins.a, *target);
             bump();
             break;
         }
@@ -948,12 +1041,13 @@ std::optional<Value> Machine::execute() {
                 if (ref.IsReference()) {
                     const auto* target = std::get_if<IndexedReference>(&ref);
                     if (target && createsCycle(incoming, target->container)) {
-                        throw RError("cyclic table ownership is not supported", ins.line);
+                        return failure(error::Code::VM_CYCLIC_TABLE_OWNERSHIP, "cyclic table ownership is not supported", ins.line);
                     }
                 }
-                Value& target = referenced(_state, ref, ins.line);
-                target = std::move(incoming);
-                promoteString(target);
+                Value* target = referenced(ref, ins.line);
+                if (!target) return pendingError();
+                *target = std::move(incoming);
+                promoteString(*target);
             }
             bump();
             break;
@@ -962,12 +1056,14 @@ std::optional<Value> Machine::execute() {
             Value index = fastReg(frame, ins.b);
             const auto* slot = std::get_if<int>(&index);
             if (!slot || *slot < 0 || static_cast<size_t>(*slot) >= _state.globals.size()) {
-                throw RError("global index out of range", ins.line);
+                return failure(error::Code::VM_GLOBAL_INDEX_OUT_OF_RANGE, "global index out of range", ins.line);
             }
             const uint32_t globalSlot = static_cast<uint32_t>(*slot);
             promoteString(_state.globals[globalSlot].value);
+            const size_t referenceId = _state.freshReferenceId();
+            if (_state.hasRuntimeError) return pendingError();
             write(ins.a, Value(std::in_place_type<GlobalReference>,
-                GlobalReference{globalSlot, _state.freshReferenceId()}));
+                GlobalReference{globalSlot, referenceId}));
             bump();
             break;
         }
@@ -976,10 +1072,10 @@ std::optional<Value> Machine::execute() {
             Value index = fastReg(frame, ins.c);
             const auto* slot = std::get_if<int>(&index);
             if (!slot || *slot < 0 || !object.IsString()) {
-                throw RError("character index expects a string", ins.line);
+                return failure(error::Code::VM_CHARACTER_INDEX_EXPECTS_STRING, "character index expects a string", ins.line);
             }
             const std::string text = object.ToString();
-            if (static_cast<size_t>(*slot) >= text.size()) throw RError("string index out of range", ins.line);
+            if (static_cast<size_t>(*slot) >= text.size()) return failure(error::Code::VM_STRING_INDEX_OUT_OF_RANGE, "string index out of range", ins.line);
             write(ins.a, Value::Integer(static_cast<unsigned char>(text[static_cast<size_t>(*slot)])));
             bump();
             break;
@@ -989,30 +1085,31 @@ std::optional<Value> Machine::execute() {
             Value index = fastReg(frame, ins.b);
             Value incoming = fastReg(frame, ins.c);
             const auto* slot = std::get_if<int>(&index);
-            if (!slot || *slot < 0) throw RError("character index expects a string", ins.line);
+            if (!slot || *slot < 0) return failure(error::Code::VM_CHARACTER_INDEX_EXPECTS_STRING, "character index expects a string", ins.line);
             char byte = 0;
             if (const auto* number = std::get_if<int>(&incoming)) byte = static_cast<char>(*number);
-            else if (const auto* text = stringData(incoming)) {
+            else if (const auto* text = incoming.AsStringData()) {
                 if (!text->empty()) byte = (*text)[0];
             } else if (incoming.IsString() && !incoming.ToString().empty()) byte = incoming.ToString()[0];
             auto* stored = mutableStringData(object);
             if (!stored) {
-                throw RError("character index expects a string", ins.line);
+                return failure(error::Code::VM_CHARACTER_INDEX_EXPECTS_STRING, "character index expects a string", ins.line);
             }
-            if (static_cast<size_t>(*slot) >= stored->size()) throw RError("string index out of range", ins.line);
+            if (static_cast<size_t>(*slot) >= stored->size()) return failure(error::Code::VM_STRING_INDEX_OUT_OF_RANGE, "string index out of range", ins.line);
             (*stored)[static_cast<size_t>(*slot)] = byte;
             bump();
             break;
         }
         case Op::NewObj: {
             const std::string_view type = _state.constantString(chunk, ins.b, ins.line);
+            if (_state.hasRuntimeError) return pendingError();
             auto factory = _state.factories.find(std::string(type));
             if (factory == _state.factories.end() || !factory->second) {
-                throw RError("unknown type '" + std::string(type) + "'", ins.line);
+                return failure(error::Code::VM_UNKNOWN_TYPE, "unknown type '" + std::string(type) + "'", ins.line);
             }
             std::shared_ptr<IScriptObject> object = factory->second();
             if (!object) {
-                throw RError("unknown type '" + std::string(type) + "'", ins.line);
+                return failure(error::Code::VM_UNKNOWN_TYPE, "unknown type '" + std::string(type) + "'", ins.line);
             }
             write(ins.a, Value(std::move(object)));
             bump();
@@ -1023,6 +1120,7 @@ std::optional<Value> Machine::execute() {
             std::string format;
             if (ins.d != 65535) {
                 format = std::string(_state.constantString(chunk, ins.d, ins.line));
+                if (_state.hasRuntimeError) return pendingError();
             }
             if (ins.c == 2 && value.IsString()) {
                 write(ins.a, value);
@@ -1044,7 +1142,9 @@ std::optional<Value> Machine::execute() {
             }
             if (ins.c == 0) {
                 if (const auto* integerValue = std::get_if<int>(&value)) write(ins.a, Value::Integer(*integerValue));
-                else if (const auto* realValue = std::get_if<float>(&value)) write(ins.a, Value::Integer(narrowInt(*realValue, ins.line)));
+                else if (const auto* realValue = std::get_if<float>(&value)) {
+                    write(ins.a, Value::Integer(narrowInt(*realValue, ins.line)));
+                }
                 else if (const auto* flag = std::get_if<bool>(&value)) write(ins.a, Value::Integer(*flag ? 1 : 0));
                 else if (value.IsString()) {
                     write(ins.a, Value::Integer(castStringToInt(value.ToString(), format)));
@@ -1061,11 +1161,13 @@ std::optional<Value> Machine::execute() {
             break;
         }
         case Op::CallName: {
+            if (_state.hasRuntimeError) return pendingError();
             // Имя ищется линейно: сначала скриптовые функции, потом нативы.
             // Нет ни там, ни там — в регистр пишется int 0, не null и не ошибка.
             const std::string_view name = _state.constantString(chunk, ins.b, ins.line);
+            if (_state.hasRuntimeError) return pendingError();
             if (ins.d > 0 && static_cast<size_t>(ins.c) + ins.d > frame.regs.size()) {
-                throw RError("internal argument fault", ins.line);
+                return failure(error::Code::VM_INTERNAL_ARGUMENT_FAULT, "internal argument fault", ins.line);
             }
             const std::span<const Value> args(frame.regs.data() + ins.c, ins.d);
             bump();
@@ -1087,21 +1189,25 @@ std::optional<Value> Machine::execute() {
                 }
                 _state.runStack.back().frames.push_back(std::move(next));
                 if (_state.runStack.back().frames.size() > SME_MAX_RECURSION_DEPTH) {
-                    throw RError("script recursion is too deep");
+                    return failure(error::Code::VM_RECURSION_DEPTH_EXCEEDED, "script recursion is too deep");
                 }
                 break;
             }
             auto native = std::find(_state.nativeNames.begin(), _state.nativeNames.end(), name);
             if (native != _state.nativeNames.end()) {
                 const auto index = static_cast<size_t>(std::distance(_state.nativeNames.begin(), native));
-                write(ins.a, _state.natives[index](_engine, args));
+                Value result = _state.natives[index](_engine, args);
+                if (_state.hasRuntimeError) {
+                    return pendingError();
+                }
+                _state.runStack.back().frames.back().regs[ins.a] = std::move(result);
                 break;
             }
             write(ins.a, Value::Integer(0));
             break;
         }
         default:
-            throw RError("unknown instruction", ins.line);
+            return failure(error::Code::VM_UNKNOWN_INSTRUCTION, "unknown instruction", ins.line);
         }
     }
 }

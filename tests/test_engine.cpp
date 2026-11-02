@@ -20,10 +20,102 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 
 namespace {
+
+TEST(ErrorResult, Void) {
+    sme::error::Result<void> success;
+    EXPECT_FALSE(success.error);
+    EXPECT_TRUE(static_cast<bool>(success));
+
+    sme::error::Result<void> failure(sme::error::Error(
+        sme::error::Code::UNKNOWN, "operation failed"));
+    ASSERT_TRUE(failure.error);
+    EXPECT_EQ(failure.error->message(), "operation failed");
+    EXPECT_FALSE(static_cast<bool>(failure));
+}
+
+TEST(ErrorResult, Value) {
+    sme::error::Result<sme::Value> success(sme::Value::Integer(42));
+    EXPECT_FALSE(success.error);
+    EXPECT_TRUE(static_cast<bool>(success));
+    EXPECT_TRUE(success.IsInteger());
+    EXPECT_EQ(success.ToInteger(), 42);
+
+    sme::error::Result<sme::Value> failure(sme::Value::Null(), sme::error::Error(
+        sme::error::Code::UNKNOWN, "operation failed"));
+    ASSERT_TRUE(failure.error);
+    EXPECT_FALSE(static_cast<bool>(failure));
+
+    EXPECT_TRUE((std::is_base_of_v<sme::Value, sme::error::Result<sme::Value>>));
+}
+
+TEST(RuntimeError, CallbackErrorReturnsLocationAndStack) {
+    sme::Engine engine;
+    engine.RegisterFn("fail", [](sme::Engine& callbackEngine, std::span<const sme::Value>) {
+        callbackEngine.RuntimeError(sme::error::Code::VM_EXECUTION_FAILURE, "callback failed");
+        return sme::Value::Integer(99);
+    });
+    ASSERT_FALSE(engine.LoadSource("func main() {\n  fail();\n  return 42;\n}\n"));
+
+    auto result = engine.call("main");
+    ASSERT_TRUE(result.error);
+    EXPECT_EQ(result.error->code(), sme::error::Code::VM_EXECUTION_FAILURE);
+    EXPECT_EQ(result.error->message(), "callback failed");
+    EXPECT_EQ(result.error->location().function, "main");
+    EXPECT_EQ(result.error->location().line, 2);
+    ASSERT_FALSE(result.error->stack().empty());
+    EXPECT_EQ(result.error->stack().back().function, "main");
+}
+
+TEST(RuntimeError, FirstErrorWinsUntilControlCheckpoint) {
+    sme::Engine engine;
+    ASSERT_FALSE(engine.LoadSource("func main() {\n  var first = 1 / 0;\n  var second = 2 / 0;\n  return 42;\n}\n"));
+
+    auto result = engine.call("main");
+    ASSERT_TRUE(result.error);
+    EXPECT_EQ(result.error->code(), sme::error::Code::VM_DIVISION_BY_ZERO);
+    EXPECT_EQ(result.error->location().line, 2);
+}
+
+TEST(RuntimeError, IgnoredNestedCallErrorStopsOuterScript) {
+    sme::Engine engine;
+    bool continued = false;
+    engine.RegisterFn("nested", [](sme::Engine& callbackEngine, std::span<const sme::Value>) {
+        (void)callbackEngine.call("inner");
+        return sme::Value::Null();
+    });
+    engine.RegisterFn("continued", [&continued](sme::Engine&, std::span<const sme::Value>) {
+        continued = true;
+        return sme::Value::Null();
+    });
+    ASSERT_FALSE(engine.LoadSource(R"(
+        func inner() { return 1 / 0; }
+        func outer() {
+            nested();
+            continued();
+            return 42;
+        }
+    )"));
+
+    auto result = engine.call("outer");
+    ASSERT_TRUE(result.error);
+    EXPECT_EQ(result.error->code(), sme::error::Code::VM_DIVISION_BY_ZERO);
+    EXPECT_FALSE(continued);
+}
+
+TEST(RuntimeError, ResizeTableUsesRuntimeError) {
+    sme::Engine engine;
+    sme::library::InstallDefault(engine);
+    ASSERT_FALSE(engine.LoadSource("func main() { tabresize(1, 2); return 42; }"));
+
+    auto result = engine.call("main");
+    ASSERT_TRUE(result.error);
+    EXPECT_EQ(result.error->code(), sme::error::Code::ENGINE_TABRESIZE_EXPECTS_TABLE);
+}
 
 std::string scriptPath(const char* relative) {
     return std::string(MLN_TESTS_DIR) + "/" + relative;
@@ -68,10 +160,19 @@ struct Result {
     }
 };
 
+sme::Value callValue(sme::Engine& engine, std::string_view function) {
+    auto callResult = engine.call(function);
+    if (callResult.error) {
+        ADD_FAILURE() << callResult.error->message();
+        return sme::Value::Null();
+    }
+    return std::move(callResult);
+}
+
 Result run(const char* file, const char* function) {
     Result result;
     result.engine = &cachedEngine(file);
-    result.value = result.engine->call(function);
+    result.value = callValue(*result.engine, function);
     return result;
 }
 
@@ -82,14 +183,16 @@ public:
     TStruct() { ++alive; }
     ~TStruct() override { --alive; }
 
-    sme::Value GetProperty(sme::Engine&, std::string_view name) const override {
+    sme::Value GetProperty(sme::Engine& engine, std::string_view name) const override {
         if (name == "test_int") return sme::Value::Integer(_testInt);
         if (name == "test_str") return sme::Value::String(_testStr);
         if (name == "test_out") return sme::Value::String(_testOut);
-        throw sme::RError("unknown property '" + std::string(name) + "'");
+        engine.RuntimeError(sme::error::Code::OBJECT_UNKNOWN_PROPERTY,
+            "unknown property '" + std::string(name) + "'");
+        return sme::Value::Null();
     }
 
-    void SetProperty(sme::Engine&, std::string_view name, const sme::Value& value) override {
+    void SetProperty(sme::Engine& engine, std::string_view name, const sme::Value& value) override {
         if (name == "test_int" && value.IsInteger()) {
             _testInt = std::get<int>(value);
             return;
@@ -100,10 +203,11 @@ public:
             else _testOut = std::move(text);
             return;
         }
-        throw sme::RError("unknown property '" + std::string(name) + "'");
+        engine.RuntimeError(sme::error::Code::OBJECT_UNKNOWN_PROPERTY,
+            "unknown property '" + std::string(name) + "'");
     }
 
-    sme::Value Call(sme::Engine&, std::string_view name, std::span<const sme::Value> args) override {
+    sme::Value Call(sme::Engine& engine, std::string_view name, std::span<const sme::Value> args) override {
         if (name == "run") {
             _testOut = _testStr + std::to_string(_testInt);
             return sme::Value::Null();
@@ -114,7 +218,9 @@ public:
         if (name == "add" && args.size() == 2 && args[0].IsInteger() && args[1].IsInteger()) {
             return sme::Value::Integer(std::get<int>(args[0]) + std::get<int>(args[1]));
         }
-        throw sme::RError("unknown method '" + std::string(name) + "'");
+        engine.RuntimeError(sme::error::Code::OBJECT_UNKNOWN_METHOD,
+            "unknown method '" + std::string(name) + "'");
+        return sme::Value::Null();
     }
 
 private:
@@ -192,7 +298,7 @@ TEST(Logic, FusedComparisonKeepsIntegerPrecision)
         "    if (a > b) return 1;\n"
         "    return 0;\n"
         "}\n");
-    EXPECT_EQ(std::get<int>(engine.call("compare_large_integers")), 1);
+    EXPECT_EQ(std::get<int>(callValue(engine, "compare_large_integers")), 1);
 }
 
 TEST(Parser, FnIsNotFunctionKeyword)
@@ -1125,9 +1231,15 @@ TEST(EdgeCases, IntegerArithmeticOverflow)
         func mul_overflow() { return 1073741824 * 2; }
     )");
 
-    EXPECT_THROW(engine.call("add_overflow"), sme::RError);
-    EXPECT_THROW(engine.call("sub_overflow"), sme::RError);
-    EXPECT_THROW(engine.call("mul_overflow"), sme::RError);
+    auto add = engine.call("add_overflow");
+    ASSERT_TRUE(add.error);
+    EXPECT_EQ(add.error->code(), sme::error::Code::VM_INTEGER_OVERFLOW);
+    auto sub = engine.call("sub_overflow");
+    ASSERT_TRUE(sub.error);
+    EXPECT_EQ(sub.error->code(), sme::error::Code::VM_INTEGER_OVERFLOW);
+    auto mul = engine.call("mul_overflow");
+    ASSERT_TRUE(mul.error);
+    EXPECT_EQ(mul.error->code(), sme::error::Code::VM_INTEGER_OVERFLOW);
 }
 
 TEST(EdgeCases, FloatingPointPrecision)
@@ -1170,7 +1282,7 @@ TEST(IScriptObject, test_Prop)
 	sme::library::InstallGS(engine);
     engine.RegisterFactory("TStruct", [] { return std::make_shared<TStruct>(); });
     engine.Load(scriptPath("ver2/test_prop.gs"));
-    sme::Value value = engine.call("test_Prop");
+    sme::Value value = callValue(engine, "test_Prop");
     EXPECT_EQ(TStruct::alive, 0);
     EXPECT_EQ(value.CastString(), "hello world42");
 }
@@ -1185,7 +1297,7 @@ TEST(IScriptObject, test_PropCall)
 	sme::library::InstallGS(engine);
     engine.RegisterFactory("TStruct", [] { return std::make_shared<TStruct>(); });
     engine.Load(scriptPath("ver2/test_prop.gs"));
-    sme::Value value = engine.call("test_PropCall");
+    sme::Value value = callValue(engine, "test_PropCall");
     EXPECT_EQ(TStruct::alive, 0);
     EXPECT_EQ(value.CastString(), "7 items");
 }
@@ -1200,7 +1312,7 @@ TEST(IScriptObject, test_PropAdd)
 	sme::library::InstallGS(engine);
     engine.RegisterFactory("TStruct", [] { return std::make_shared<TStruct>(); });
     engine.Load(scriptPath("ver2/test_prop.gs"));
-    sme::Value value = engine.call("test_PropAdd");
+    sme::Value value = callValue(engine, "test_PropAdd");
     ASSERT_TRUE(value.IsInteger());
     EXPECT_EQ(TStruct::alive, 0);
     EXPECT_EQ(std::get<int>(value), 43);
@@ -1220,7 +1332,7 @@ TEST(IScriptObject, test_PropSharedLifetime)
         return kept;
     });
     engine.Load(scriptPath("ver2/test_prop.gs"));
-    sme::Value value = engine.call("test_PropRelease");
+    sme::Value value = callValue(engine, "test_PropRelease");
     ASSERT_TRUE(value.IsInteger());
     EXPECT_EQ(std::get<int>(value), 0);
     EXPECT_EQ(TStruct::alive, 1);
@@ -1230,6 +1342,17 @@ TEST(IScriptObject, test_PropSharedLifetime)
 
 TEST(Value, AsNumber)
 {
+    const sme::Value stringValue = sme::Value::String("text");
+    ASSERT_NE(stringValue.AsStringData(), nullptr);
+    EXPECT_EQ(*stringValue.AsStringData(), "text");
+    const sme::Value sharedString(std::in_place_type<sme::SharedString>,
+        std::make_shared<std::string>("shared"));
+    ASSERT_NE(sharedString.AsStringData(), nullptr);
+    EXPECT_EQ(*sharedString.AsStringData(), "shared");
+    EXPECT_EQ(sme::Value::Integer(42).AsStringData(), nullptr);
+    EXPECT_EQ(sme::Value::Integer(42).AsInteger(), 42);
+    EXPECT_EQ(sme::Value::Boolean(true).AsInteger(), 1);
+    EXPECT_FALSE(sme::Value::Float(2.5f).AsInteger().has_value());
     EXPECT_EQ(sme::Value::Integer(42).AsNumber(), 42.0);
     EXPECT_EQ(sme::Value::Float(2.5f).AsNumber(), 2.5);
     EXPECT_EQ(sme::Value::Boolean(true).AsNumber(), 1.0);
@@ -1286,17 +1409,17 @@ TEST(ValueOwnership, ValuesOutliveEngineAndCalls)
                 return text;
             }
         )");
-        value = engine.call("text");
-        table = engine.call("table");
+        value = callValue(engine, "text");
+        table = callValue(engine, "table");
         EXPECT_TRUE(value.IsString());
         EXPECT_EQ(value.CastString(), "a string that exceeds inline storage");
         EXPECT_EQ(table.CastString(), "[1, 2, 3]");
         for (int i = 0; i < 100; ++i) {
-            EXPECT_EQ(std::get<int>(engine.call("other")), 42);
+            EXPECT_EQ(std::get<int>(callValue(engine, "other")), 42);
         }
         EXPECT_EQ(value.CastString(), "a string that exceeds inline storage");
-        EXPECT_EQ(engine.call("copy_string").CastString(), "long enough:Xong enough");
-        sme::Value referenceString = engine.call("reference_string");
+        EXPECT_EQ(callValue(engine, "copy_string").CastString(), "long enough:Xong enough");
+        sme::Value referenceString = callValue(engine, "reference_string");
         EXPECT_TRUE(std::holds_alternative<sme::SharedString>(referenceString));
         EXPECT_EQ(referenceString.CastString(), "updated string");
     }
@@ -1318,7 +1441,9 @@ TEST(ValueOwnership, CyclicTableOwnershipIsRejected)
         }
     )");
 
-    EXPECT_THROW(engine.call("cycle"), sme::RError);
+    auto result = engine.call("cycle");
+    ASSERT_TRUE(result.error);
+    EXPECT_EQ(result.error->code(), sme::error::Code::VM_CYCLIC_TABLE_OWNERSHIP);
 }
 
 TEST(ValueOwnership, TablesAndSharedValuesAreAccessibleDirectly)
@@ -1352,7 +1477,7 @@ TEST(IScriptObject, test_PropCompound)
 	sme::library::InstallGS(engine);
     engine.RegisterFactory("TStruct", [] { return std::make_shared<TStruct>(); });
     engine.Load(scriptPath("ver2/test_prop.gs"));
-    sme::Value value = engine.call("test_PropCompound");
+    sme::Value value = callValue(engine, "test_PropCompound");
     EXPECT_EQ(TStruct::alive, 0);
     EXPECT_EQ(value.CastString(), "16abc");
 }
@@ -1662,7 +1787,7 @@ TEST(Language, BackslashPaths)
     sme::Engine engine;
     engine.SetFileSystem(sme::MakeStdFileSystem());
     engine.Load(path);
-    EXPECT_EQ(std::get<int>(engine.call("test_LangInclude")), 7);
+    EXPECT_EQ(std::get<int>(callValue(engine, "test_LangInclude")), 7);
 }
 
 TEST(Language, Abort)
@@ -1685,10 +1810,13 @@ TEST(Language, Stop)
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
     engine.Load(scriptPath("ver2/test_language.gs"));
-    engine.call("test_Stop");
+    auto stoppedResult = engine.call("test_Stop");
+    ASSERT_FALSE(stoppedResult.error);
     EXPECT_TRUE(engine.stopped());
     EXPECT_EQ(globalInt(engine, "lang_stop_mark"), 17);
-    sme::Value value = engine.resume();
+    auto resumed = engine.resume();
+    ASSERT_FALSE(resumed.error);
+    sme::Value value = std::move(resumed);
     EXPECT_FALSE(engine.stopped());
     EXPECT_EQ(globalInt(engine, "lang_stop_mark"), 99);
     ASSERT_TRUE(value.IsInteger());
@@ -1739,7 +1867,7 @@ TEST(Performance, WorkloadSpeed)
     int checksum = 0;
     for (int i = 0; i < kRepeats; ++i) {
         const auto start = std::chrono::steady_clock::now();
-        sme::Value value = engine.call("test_Workload");
+        sme::Value value = callValue(engine, "test_Workload");
         samples[i] = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count();
         ASSERT_TRUE(value.IsInteger());
         const int got = std::get<int>(value);

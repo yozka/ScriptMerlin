@@ -1,6 +1,7 @@
 #include "sme_state.h"
 
 #include "sme/sme_error.h"
+#include "sme_assert.h"
 
 namespace sme {
 
@@ -13,16 +14,78 @@ size_t State::freshFrameId() {
 }
 
 size_t State::freshReferenceId() {
-    if (referenceSerial == 0) throw RError("reference identity exhausted");
+    if (referenceSerial == 0) {
+        RecordRuntimeError(error::Code::VM_REFERENCE_IDENTITY_EXHAUSTED, "reference identity exhausted");
+        return 0;
+    }
     return referenceSerial++;
 }
 
+error::Error State::MakeRuntimeError(error::Code code, std::string text, int line) const {
+    error::Location location;
+    location.source = sourceName;
+    location.line = line;
 
-void State::RuntimeError(error::Error error)
-{
-	if (errorHandler) {
-		errorHandler->Handle(std::move(error));
-	}
+    std::vector<error::StackFrame> stack;
+    for (const RunState& run : runStack) {
+        for (const Frame& frame : run.frames) {
+            if (frame.function >= functions.size()) {
+                continue;
+            }
+            const Chunk& chunk = functions[frame.function];
+            error::StackFrame item;
+            item.source = sourceName;
+            item.function = chunk.name;
+            if (frame.currentInstruction < chunk.code.size()) {
+                item.instruction = frame.currentInstruction;
+                item.line = frame.currentLine;
+            }
+            stack.push_back(item);
+            if (!runStack.empty() && &run == &runStack.back() && !run.frames.empty() &&
+                &frame == &run.frames.back()) {
+                location.function = chunk.name;
+                location.instruction = item.instruction;
+                if (line > 0) {
+                    location.line = line;
+                } else {
+                    location.line = item.line;
+                }
+            }
+        }
+    }
+    return error::Error(code, std::move(text), std::move(location), std::move(stack));
+}
+
+void State::RecordRuntimeError(error::Code code, const std::string& text, int line) {
+    if (runStack.empty()) {
+        SME_ASSERT_FAIL("runtime error raised outside an active script call");
+        return;
+    }
+    if (!hasRuntimeError) {
+        runtimeError = MakeRuntimeError(code, text, line);
+        hasRuntimeError = true;
+    }
+}
+
+void State::ClearRuntimeError() {
+    runtimeError.reset();
+    hasRuntimeError = false;
+}
+
+const error::Error& State::GetRuntimeError() const {
+    SME_ASSERT(hasRuntimeError && runtimeError.has_value());
+    return *runtimeError;
+}
+
+void State::RecordRuntimeError(const error::Error& error) {
+    if (runStack.empty()) {
+        SME_ASSERT_FAIL("runtime error raised outside an active script call");
+        return;
+    }
+    if (!hasRuntimeError) {
+        runtimeError = error;
+        hasRuntimeError = true;
+    }
 }
 
 
@@ -46,13 +109,15 @@ bool State::truthy(const Value& value) const {
     return false;
 }
 
-std::string_view State::constantString(const Chunk& chunk, size_t index, int line) const {
+std::string_view State::constantString(const Chunk& chunk, size_t index, int line) {
     if (index >= chunk.constants.size()) {
-        throw RError("internal constant fault", line);
+        RecordRuntimeError(error::Code::VM_INTERNAL_CONSTANT_FAULT, "internal constant fault", line);
+        return {};
     }
     const auto* text = std::get_if<std::string>(&chunk.constants[index]);
     if (!text) {
-        throw RError("internal constant fault", line);
+        RecordRuntimeError(error::Code::VM_INTERNAL_CONSTANT_FAULT, "internal constant fault", line);
+        return {};
     }
     return *text;
 }
