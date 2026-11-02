@@ -21,10 +21,9 @@ size_t State::freshReferenceId() {
     return referenceSerial++;
 }
 
-error::Error State::MakeRuntimeError(error::Code code, std::string text, int line) const {
+error::Error State::MakeRuntimeError(error::Code code, std::string text) const {
     error::Location location;
     location.source = sourceName;
-    location.line = line;
 
     std::vector<error::StackFrame> stack;
     for (const RunState& run : runStack) {
@@ -45,24 +44,20 @@ error::Error State::MakeRuntimeError(error::Code code, std::string text, int lin
                 &frame == &run.frames.back()) {
                 location.function = chunk.name;
                 location.instruction = item.instruction;
-                if (line > 0) {
-                    location.line = line;
-                } else {
-                    location.line = item.line;
-                }
+                location.line = item.line;
             }
         }
     }
     return error::Error(code, std::move(text), std::move(location), std::move(stack));
 }
 
-void State::RecordRuntimeError(error::Code code, const std::string& text, int line) {
+void State::RecordRuntimeError(error::Code code, const std::string& text) {
     if (runStack.empty()) {
         SME_ASSERT_FAIL("runtime error raised outside an active script call");
         return;
     }
     if (!hasRuntimeError) {
-        runtimeError = MakeRuntimeError(code, text, line);
+        runtimeError = MakeRuntimeError(code, text);
         hasRuntimeError = true;
     }
 }
@@ -109,14 +104,14 @@ bool State::truthy(const Value& value) const {
     return false;
 }
 
-std::string_view State::constantString(const Chunk& chunk, size_t index, int line) {
+std::string_view State::constantString(const Chunk& chunk, size_t index) {
     if (index >= chunk.constants.size()) {
-        RecordRuntimeError(error::Code::VM_INTERNAL_CONSTANT_FAULT, "internal constant fault", line);
+        RecordRuntimeError(error::Code::VM_INTERNAL_CONSTANT_FAULT, "internal constant fault");
         return {};
     }
     const auto* text = std::get_if<std::string>(&chunk.constants[index]);
     if (!text) {
-        RecordRuntimeError(error::Code::VM_INTERNAL_CONSTANT_FAULT, "internal constant fault", line);
+        RecordRuntimeError(error::Code::VM_INTERNAL_CONSTANT_FAULT, "internal constant fault");
         return {};
     }
     return *text;

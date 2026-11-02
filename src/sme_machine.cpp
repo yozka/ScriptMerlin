@@ -27,63 +27,63 @@ inline Value& fastReg(Frame& frame, size_t index) {
 
 Machine::Machine(Engine& engine, State& state) : _engine(engine), _state(state) {}
 
-int Machine::checkedIntAdd(int x, int y, int line) {
+int Machine::checkedIntAdd(int x, int y) {
     if ((y > 0 && x > std::numeric_limits<int>::max() - y) ||
         (y < 0 && x < std::numeric_limits<int>::min() - y)) {
-        _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow", line);
+        _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow");
         return 0;
     }
     return x + y;
 }
 
-int Machine::checkedIntSub(int x, int y, int line) {
+int Machine::checkedIntSub(int x, int y) {
     if ((y < 0 && x > std::numeric_limits<int>::max() + y) ||
         (y > 0 && x < std::numeric_limits<int>::min() + y)) {
-        _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow", line);
+        _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow");
         return 0;
     }
     return x - y;
 }
 
-int Machine::checkedIntMul(int x, int y, int line) {
+int Machine::checkedIntMul(int x, int y) {
     if (x == 0 || y == 0) return 0;
     if ((x == -1 && y == std::numeric_limits<int>::min()) ||
         (y == -1 && x == std::numeric_limits<int>::min())) {
-        _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow", line);
+        _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow");
         return 0;
     }
     if ((x > 0 && y > 0 && x > std::numeric_limits<int>::max() / y) ||
         (x > 0 && y < 0 && y < std::numeric_limits<int>::min() / x) ||
         (x < 0 && y > 0 && x < std::numeric_limits<int>::min() / y) ||
         (x < 0 && y < 0 && x < std::numeric_limits<int>::max() / y)) {
-        _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow", line);
+        _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow");
         return 0;
     }
     return x * y;
 }
 
-Value Machine::intBinary(Op op, int x, int y, int line) {
+Value Machine::intBinary(Op op, int x, int y) {
     switch (op) {
-    case Op::Add: return Value::Integer(checkedIntAdd(x, y, line));
-    case Op::Sub: return Value::Integer(checkedIntSub(x, y, line));
-    case Op::Mul: return Value::Integer(checkedIntMul(x, y, line));
+    case Op::Add: return Value::Integer(checkedIntAdd(x, y));
+    case Op::Sub: return Value::Integer(checkedIntSub(x, y));
+    case Op::Mul: return Value::Integer(checkedIntMul(x, y));
     case Op::Div:
         if (y == 0) {
-            _state.RecordRuntimeError(error::Code::VM_DIVISION_BY_ZERO, "division by zero", line);
+            _state.RecordRuntimeError(error::Code::VM_DIVISION_BY_ZERO, "division by zero");
             return Value::Null();
         }
         if (x == std::numeric_limits<int>::min() && y == -1) {
-            _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow", line);
+            _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow");
             return Value::Null();
         }
         return Value::Integer(x / y);
     case Op::Mod:
         if (y == 0) {
-            _state.RecordRuntimeError(error::Code::VM_DIVISION_BY_ZERO, "division by zero", line);
+            _state.RecordRuntimeError(error::Code::VM_DIVISION_BY_ZERO, "division by zero");
             return Value::Null();
         }
         if (x == std::numeric_limits<int>::min() && y == -1) {
-            _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow", line);
+            _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow");
             return Value::Null();
         }
         return Value::Integer(x % y);
@@ -93,7 +93,7 @@ Value Machine::intBinary(Op op, int x, int y, int line) {
     case Op::Shl:
     case Op::Shr:
         if (y < 0 || y >= 31) {
-            _state.RecordRuntimeError(error::Code::VM_SHIFT_OUT_OF_RANGE, "shift out of range", line);
+            _state.RecordRuntimeError(error::Code::VM_SHIFT_OUT_OF_RANGE, "shift out of range");
             return Value::Null();
         }
         if (op == Op::Shl) return Value::Integer(static_cast<int>(static_cast<uint32_t>(x) << y));
@@ -107,24 +107,24 @@ Value Machine::intBinary(Op op, int x, int y, int line) {
     case Op::LogicAnd: return Value::Integer((x != 0 && y != 0) ? 1 : 0);
     case Op::LogicOr: return Value::Integer((x != 0 || y != 0) ? 1 : 0);
     default:
-        _state.RecordRuntimeError(error::Code::VM_INTERNAL_OPERATOR_FAULT, "internal operator fault", line);
+        _state.RecordRuntimeError(error::Code::VM_INTERNAL_OPERATOR_FAULT, "internal operator fault");
         return Value::Null();
     }
 }
 
-int Machine::narrowInt(double number, int line) {
+int Machine::narrowInt(double number) {
     if (!std::isfinite(number) ||
         number < static_cast<double>(std::numeric_limits<int>::min()) ||
         number >= static_cast<double>(std::numeric_limits<int>::max()) + 1.0) {
-        _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow", line);
+        _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow");
         return 0;
     }
     return static_cast<int>(number);
 }
 
-Value Machine::materialize(const Chunk& chunk, size_t constant, int line) {
+Value Machine::materialize(const Chunk& chunk, size_t constant) {
     if (constant >= chunk.constants.size()) {
-        _state.RecordRuntimeError(error::Code::VM_INTERNAL_CONSTANT_FAULT, "internal constant fault", line);
+        _state.RecordRuntimeError(error::Code::VM_INTERNAL_CONSTANT_FAULT, "internal constant fault");
         return Value::Null();
     }
     const Constant& value = chunk.constants[constant];
@@ -134,7 +134,7 @@ Value Machine::materialize(const Chunk& chunk, size_t constant, int line) {
     if (const auto* flag = std::get_if<bool>(&value)) return Value::Boolean(*flag);
     if (const auto* text = std::get_if<std::string>(&value)) return Value::String(*text);
     if (std::holds_alternative<std::nullptr_t>(value)) return Value::Pointer();
-    _state.RecordRuntimeError(error::Code::VM_INTERNAL_CONSTANT_FAULT, "internal constant fault", line);
+    _state.RecordRuntimeError(error::Code::VM_INTERNAL_CONSTANT_FAULT, "internal constant fault");
     return Value::Null();
 }
 
@@ -193,11 +193,11 @@ bool Machine::equals(const Value& lhs, const Value& rhs) {
 
 // NaN ни меньше, ни больше, ни равен. == идёт через equals и для NaN уже ложен;
 // <= и >= без этой проверки считали бы «не меньше и не больше» равенством.
-int Machine::compare(const Value& lhs, const Value& rhs, int line) {
+int Machine::compare(const Value& lhs, const Value& rhs) {
     auto left = lhs.AsNumber();
     auto right = rhs.AsNumber();
     if (!left || !right) {
-        _state.RecordRuntimeError(error::Code::VM_COMPARISON_EXPECTS_NUMBERS, "comparison expects numbers", line);
+        _state.RecordRuntimeError(error::Code::VM_COMPARISON_EXPECTS_NUMBERS, "comparison expects numbers");
         return 0;
     }
     if (*left < *right) return -1;
@@ -205,14 +205,14 @@ int Machine::compare(const Value& lhs, const Value& rhs, int line) {
     return 0;
 }
 
-Value Machine::unary(Op op, const Value& value, int line) {
+Value Machine::unary(Op op, const Value& value) {
     if (op == Op::Not) {
         return Value::Integer(_state.truthy(value) ? 0 : 1);
     }
     if (op == Op::Neg) {
         if (const auto* integer = std::get_if<int>(&value)) {
             if (*integer == std::numeric_limits<int>::min()) {
-                _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow", line);
+                _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow");
                 return Value::Null();
             }
             return sme::Value::Integer(-*integer);
@@ -220,19 +220,19 @@ Value Machine::unary(Op op, const Value& value, int line) {
         if (const auto* real = std::get_if<float>(&value)) {
             return sme::Value::Float(-*real);
         }
-        _state.RecordRuntimeError(error::Code::VM_NEGATION_EXPECTS_NUMBER, "negation expects a number", line);
+        _state.RecordRuntimeError(error::Code::VM_NEGATION_EXPECTS_NUMBER, "negation expects a number");
         return Value::Null();
     }
     if (const auto* integer = std::get_if<int>(&value)) {
         return sme::Value::Integer(~*integer);
     }
-    _state.RecordRuntimeError(error::Code::VM_BITWISE_NOT_EXPECTS_INT, "bitwise not expects an int", line);
+    _state.RecordRuntimeError(error::Code::VM_BITWISE_NOT_EXPECTS_INT, "bitwise not expects an int");
     return Value::Null();
 }
 
-Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
+Value Machine::binary(Op op, const Value& lhs, const Value& rhs) {
     if (lhs.index() == VT_INT && rhs.index() == VT_INT) {
-        return intBinary(op, std::get<int>(lhs), std::get<int>(rhs), line);
+        return intBinary(op, std::get<int>(lhs), std::get<int>(rhs));
     }
     if (op == Op::LogicAnd || op == Op::LogicOr) {
         bool left = _state.truthy(lhs);
@@ -268,13 +268,13 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
         auto left = lhs.AsNumber();
         auto right = rhs.AsNumber();
         if (!left || !right) {
-            _state.RecordRuntimeError(error::Code::VM_COMPARISON_EXPECTS_NUMBERS, "comparison expects numbers", line);
+            _state.RecordRuntimeError(error::Code::VM_COMPARISON_EXPECTS_NUMBERS, "comparison expects numbers");
             return Value::Null();
         }
         if (std::isnan(*left) || std::isnan(*right)) {
             return Value::Integer(0);
         }
-        int order = compare(lhs, rhs, line);
+        int order = compare(lhs, rhs);
         bool result = false;
         switch (op) {
         case Op::CmpLt: result = order < 0; break;
@@ -289,7 +289,7 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
     auto left = lhs.AsNumber();
     auto right = rhs.AsNumber();
     if (!left || !right) {
-        _state.RecordRuntimeError(error::Code::VM_OPERATOR_EXPECTS_NUMBERS, "operator expects numbers", line);
+        _state.RecordRuntimeError(error::Code::VM_OPERATOR_EXPECTS_NUMBERS, "operator expects numbers");
         return Value::Null();
     }
     const bool floats = lhs.IsFloat() || rhs.IsFloat();
@@ -307,7 +307,7 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
     if (!floats && (op == Op::Add || op == Op::Sub || op == Op::Mul)) {
         auto pair = bothInts();
         if (!pair) {
-            _state.RecordRuntimeError(error::Code::VM_OPERATOR_EXPECTS_NUMBERS, "operator expects numbers", line);
+            _state.RecordRuntimeError(error::Code::VM_OPERATOR_EXPECTS_NUMBERS, "operator expects numbers");
             return Value::Null();
         }
         const int64_t x = pair->first;
@@ -317,7 +317,7 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
         else if (op == Op::Sub) z = x - y;
         else z = x * y;
         if (z > std::numeric_limits<int>::max() || z < std::numeric_limits<int>::min()) {
-            _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow", line);
+            _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow");
             return Value::Null();
         }
         return Value::Integer(static_cast<int>(z));
@@ -330,13 +330,13 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
     case Op::Div: {
         // INT_MIN / -1 непредставимо в int32. То же проверяется у остатка.
         if (b == 0) {
-            _state.RecordRuntimeError(error::Code::VM_DIVISION_BY_ZERO, "division by zero", line);
+            _state.RecordRuntimeError(error::Code::VM_DIVISION_BY_ZERO, "division by zero");
             return Value::Null();
         }
         if (!floats) {
             auto pair = *bothInts();
             if (pair.first == std::numeric_limits<int>::min() && pair.second == -1) {
-                _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow", line);
+                _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow");
                 return Value::Null();
             }
             return Value::Integer(pair.first / pair.second);
@@ -345,13 +345,13 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
     }
     case Op::Mod: {
         if (b == 0) {
-            _state.RecordRuntimeError(error::Code::VM_DIVISION_BY_ZERO, "division by zero", line);
+            _state.RecordRuntimeError(error::Code::VM_DIVISION_BY_ZERO, "division by zero");
             return Value::Null();
         }
         if (!floats) {
             auto pair = *bothInts();
             if (pair.first == std::numeric_limits<int>::min() && pair.second == -1) {
-                _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow", line);
+                _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow");
                 return Value::Null();
             }
             return Value::Integer(pair.first % pair.second);
@@ -365,7 +365,7 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
     case Op::Shr: {
         auto pair = bothInts();
         if (!pair) {
-            _state.RecordRuntimeError(error::Code::VM_BITWISE_OPERATOR_EXPECTS_INTS, "bitwise operator expects ints", line);
+            _state.RecordRuntimeError(error::Code::VM_BITWISE_OPERATOR_EXPECTS_INTS, "bitwise operator expects ints");
             return Value::Null();
         }
         int x = pair->first;
@@ -379,7 +379,7 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
             // Сдвиг логический, через uint32. Бит 31 поставить нельзя: счётчик только 0..30.
             // Поэтому -8 >> 1 — это 2147483644, а не арифметические -4.
             if (y < 0 || y >= 31) {
-                _state.RecordRuntimeError(error::Code::VM_SHIFT_OUT_OF_RANGE, "shift out of range", line);
+                _state.RecordRuntimeError(error::Code::VM_SHIFT_OUT_OF_RANGE, "shift out of range");
                 return Value::Null();
             }
             if (op == Op::Shl) {
@@ -393,7 +393,7 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs, int line) {
     default:
         break;
     }
-    _state.RecordRuntimeError(error::Code::VM_INTERNAL_OPERATOR_FAULT, "internal operator fault", line);
+    _state.RecordRuntimeError(error::Code::VM_INTERNAL_OPERATOR_FAULT, "internal operator fault");
     return Value::Null();
 }
 
@@ -517,44 +517,44 @@ bool createsCycle(const Value& value, const TableHandle& destination) {
 
 }  // анонимное пространство имён
 
-Value* Machine::referenced(const Value& value, int line) {
+Value* Machine::referenced(const Value& value) {
     if (!value.IsReference()) {
-        _state.RecordRuntimeError(error::Code::VM_VALUE_NOT_REFERENCE, "value is not a reference", line);
+        _state.RecordRuntimeError(error::Code::VM_VALUE_NOT_REFERENCE, "value is not a reference");
         return nullptr;
     }
     if (const auto* link = std::get_if<SharedValue>(&value)) {
         if (!*link) {
-            _state.RecordRuntimeError(error::Code::VM_DANGLING_REFERENCE, "dangling reference", line);
+            _state.RecordRuntimeError(error::Code::VM_DANGLING_REFERENCE, "dangling reference");
             return nullptr;
         }
         return link->get();
     }
     if (const auto* indexed = std::get_if<IndexedReference>(&value)) {
         if (!indexed->container) {
-            _state.RecordRuntimeError(error::Code::VM_DANGLING_REFERENCE, "dangling reference", line);
+            _state.RecordRuntimeError(error::Code::VM_DANGLING_REFERENCE, "dangling reference");
             return nullptr;
         }
         if (indexed->index >= indexed->container->size()) {
-            _state.RecordRuntimeError(error::Code::VM_DANGLING_REFERENCE, "dangling reference", line);
+            _state.RecordRuntimeError(error::Code::VM_DANGLING_REFERENCE, "dangling reference");
             return nullptr;
         }
         return &(*indexed->container)[indexed->index];
     }
     if (const auto* global = std::get_if<GlobalReference>(&value)) {
         if (global->slot >= _state.globals.size()) {
-            _state.RecordRuntimeError(error::Code::VM_DANGLING_REFERENCE, "dangling reference", line);
+            _state.RecordRuntimeError(error::Code::VM_DANGLING_REFERENCE, "dangling reference");
             return nullptr;
         }
         return &_state.globals[global->slot].value;
     }
     const LocalReference& local = std::get<LocalReference>(value);
     if (_state.runStack.empty() || local.frame >= _state.runStack.back().frames.size()) {
-        _state.RecordRuntimeError(error::Code::VM_DANGLING_REFERENCE, "dangling reference", line);
+        _state.RecordRuntimeError(error::Code::VM_DANGLING_REFERENCE, "dangling reference");
         return nullptr;
     }
     Frame& owner = _state.runStack.back().frames[local.frame];
     if (owner.generation != local.frameGeneration || local.slot >= owner.regs.size()) {
-        _state.RecordRuntimeError(error::Code::VM_DANGLING_REFERENCE, "dangling reference", line);
+        _state.RecordRuntimeError(error::Code::VM_DANGLING_REFERENCE, "dangling reference");
         return nullptr;
     }
     return &owner.regs[local.slot];
@@ -598,8 +598,8 @@ error::Result<std::optional<Value>> Machine::execute() {
     auto pendingError = [&]() -> error::Result<std::optional<Value>> {
         return {std::nullopt, _state.GetRuntimeError()};
     };
-    auto failure = [&](error::Code code, std::string message, int line = 0) {
-        _state.RecordRuntimeError(code, message, line);
+    auto failure = [&](error::Code code, std::string message) {
+        _state.RecordRuntimeError(code, message);
         return pendingError();
     };
     while (true) {
@@ -624,7 +624,7 @@ error::Result<std::optional<Value>> Machine::execute() {
         case Op::LoadConst: {
             const Constant& constant = chunk.constants[ins.b];
             if (const auto* number = std::get_if<int>(&constant)) frame.regs[ins.a] = Value::Integer(*number);
-            else frame.regs[ins.a] = materialize(chunk, ins.b, ins.line);
+            else frame.regs[ins.a] = materialize(chunk, ins.b);
             frame.ip++;
             break;
         }
@@ -644,12 +644,12 @@ error::Result<std::optional<Value>> Machine::execute() {
             break;
         }
         case Op::LoadGlobal:
-            if (ins.b >= _state.globals.size()) return failure(error::Code::VM_INTERNAL_GLOBAL_FAULT, "internal global fault", ins.line);
+            if (ins.b >= _state.globals.size()) return failure(error::Code::VM_INTERNAL_GLOBAL_FAULT, "internal global fault");
             write(ins.a, _state.globals[ins.b].value);
             bump();
             break;
         case Op::StoreGlobal: {
-            if (ins.a >= _state.globals.size()) return failure(error::Code::VM_INTERNAL_GLOBAL_FAULT, "internal global fault", ins.line);
+            if (ins.a >= _state.globals.size()) return failure(error::Code::VM_INTERNAL_GLOBAL_FAULT, "internal global fault");
             Value incoming = fastReg(frame, ins.b);
             if (!incoming.IsNull()) {
                 _state.globals[ins.a].value = std::move(incoming);
@@ -673,9 +673,9 @@ error::Result<std::optional<Value>> Machine::execute() {
             const Value& lhs = frame.regs[ins.b];
             const Value& rhs = frame.regs[ins.c];
             if (lhs.index() == VT_INT && rhs.index() == VT_INT) {
-                frame.regs[ins.a] = intBinary(ins.op, std::get<int>(lhs), std::get<int>(rhs), ins.line);
+                frame.regs[ins.a] = intBinary(ins.op, std::get<int>(lhs), std::get<int>(rhs));
             } else {
-                frame.regs[ins.a] = binary(ins.op, lhs, rhs, ins.line);
+                frame.regs[ins.a] = binary(ins.op, lhs, rhs);
             }
             frame.ip++;
             break;
@@ -685,16 +685,16 @@ error::Result<std::optional<Value>> Machine::execute() {
             const Value& lhs = frame.regs[ins.b];
             const Op op = static_cast<Op>(ins.c);
             if (lhs.index() == VT_INT) {
-                frame.regs[ins.a] = intBinary(op, std::get<int>(lhs), imm, ins.line);
+                frame.regs[ins.a] = intBinary(op, std::get<int>(lhs), imm);
             } else {
-                frame.regs[ins.a] = binary(op, lhs, Value::Integer(imm), ins.line);
+                frame.regs[ins.a] = binary(op, lhs, Value::Integer(imm));
             }
             frame.ip++;
             break;
         }
         case Op::Neg: case Op::Not: case Op::BitNot: {
             Value value = fastReg(frame, ins.b);
-            write(ins.a, unary(ins.op, value, ins.line));
+            write(ins.a, unary(ins.op, value));
             bump();
             break;
         }
@@ -727,7 +727,7 @@ error::Result<std::optional<Value>> Machine::execute() {
                     else if (op == Op::CmpLe) result = *left <= *right;
                     else if (op == Op::CmpGt) result = *left > *right;
                     else if (op == Op::CmpGe) result = *left >= *right;
-                    else return failure(error::Code::VM_INTERNAL_OPERATOR_FAULT, "internal operator fault", ins.line);
+                    else return failure(error::Code::VM_INTERNAL_OPERATOR_FAULT, "internal operator fault");
                 } else if (op == Op::CmpEq) {
                     result = equals(lhs, rhs);
                 } else if (op == Op::CmpNe) {
@@ -735,13 +735,13 @@ error::Result<std::optional<Value>> Machine::execute() {
                 } else {
                     const auto leftNumber = lhs.AsNumber();
                     const auto rightNumber = rhs.AsNumber();
-                    if (!leftNumber || !rightNumber) return failure(error::Code::VM_COMPARISON_EXPECTS_NUMBERS, "comparison expects numbers", ins.line);
+                    if (!leftNumber || !rightNumber) return failure(error::Code::VM_COMPARISON_EXPECTS_NUMBERS, "comparison expects numbers");
                     if (!std::isnan(*leftNumber) && !std::isnan(*rightNumber)) {
                         if (op == Op::CmpLt) result = *leftNumber < *rightNumber;
                         else if (op == Op::CmpLe) result = *leftNumber <= *rightNumber;
                         else if (op == Op::CmpGt) result = *leftNumber > *rightNumber;
                         else if (op == Op::CmpGe) result = *leftNumber >= *rightNumber;
-                        else return failure(error::Code::VM_INTERNAL_OPERATOR_FAULT, "internal operator fault", ins.line);
+                        else return failure(error::Code::VM_INTERNAL_OPERATOR_FAULT, "internal operator fault");
                     }
                 }
             } else if (op == Op::CmpEq) {
@@ -751,13 +751,13 @@ error::Result<std::optional<Value>> Machine::execute() {
             } else {
                 const auto left = lhs.AsNumber();
                 const auto right = rhs.AsNumber();
-                if (!left || !right) return failure(error::Code::VM_COMPARISON_EXPECTS_NUMBERS, "comparison expects numbers", ins.line);
+                if (!left || !right) return failure(error::Code::VM_COMPARISON_EXPECTS_NUMBERS, "comparison expects numbers");
                 if (!std::isnan(*left) && !std::isnan(*right)) {
                     if (op == Op::CmpLt) result = *left < *right;
                     else if (op == Op::CmpLe) result = *left <= *right;
                     else if (op == Op::CmpGt) result = *left > *right;
                     else if (op == Op::CmpGe) result = *left >= *right;
-                    else return failure(error::Code::VM_INTERNAL_OPERATOR_FAULT, "internal operator fault", ins.line);
+                    else return failure(error::Code::VM_INTERNAL_OPERATOR_FAULT, "internal operator fault");
                 }
             }
             if (!result) frame.ip = ins.e;
@@ -777,7 +777,7 @@ error::Result<std::optional<Value>> Machine::execute() {
                 else if (op == Op::CmpLe) result = *integer <= immediate;
                 else if (op == Op::CmpGt) result = *integer > immediate;
                 else if (op == Op::CmpGe) result = *integer >= immediate;
-                else return failure(error::Code::VM_INTERNAL_OPERATOR_FAULT, "internal operator fault", ins.line);
+                else return failure(error::Code::VM_INTERNAL_OPERATOR_FAULT, "internal operator fault");
             } else if (op == Op::CmpEq || op == Op::CmpNe) {
                 bool equal = false;
                 if (const auto number = lhs.AsNumber()) {
@@ -786,14 +786,14 @@ error::Result<std::optional<Value>> Machine::execute() {
                 result = op == Op::CmpEq ? equal : !equal;
             } else {
                 const auto left = lhs.AsNumber();
-                if (!left) return failure(error::Code::VM_COMPARISON_EXPECTS_NUMBERS, "comparison expects numbers", ins.line);
+                if (!left) return failure(error::Code::VM_COMPARISON_EXPECTS_NUMBERS, "comparison expects numbers");
                 const float right = static_cast<float>(immediate);
                 if (!std::isnan(*left)) {
                     if (op == Op::CmpLt) result = *left < right;
                     else if (op == Op::CmpLe) result = *left <= right;
                     else if (op == Op::CmpGt) result = *left > right;
                     else if (op == Op::CmpGe) result = *left >= right;
-                    else return failure(error::Code::VM_INTERNAL_OPERATOR_FAULT, "internal operator fault", ins.line);
+                    else return failure(error::Code::VM_INTERNAL_OPERATOR_FAULT, "internal operator fault");
                 }
             }
             if (!result) frame.ip = ins.e;
@@ -813,7 +813,7 @@ error::Result<std::optional<Value>> Machine::execute() {
             }
             const auto left = lhs.AsNumber();
             const auto right = rhs.AsNumber();
-            if (!left || !right) return failure(error::Code::VM_COMPARISON_EXPECTS_NUMBERS, "comparison expects numbers", ins.line);
+            if (!left || !right) return failure(error::Code::VM_COMPARISON_EXPECTS_NUMBERS, "comparison expects numbers");
             if (!(*left <= *right)) frame.ip = ins.c;
             else bump();
             break;
@@ -823,7 +823,7 @@ error::Result<std::optional<Value>> Machine::execute() {
             const Value& limit = fastReg(frame, ins.b);
             Value& counter = frame.regs[ins.a];
             if (const auto* left = std::get_if<int>(&counter); left) {
-                if (*left == std::numeric_limits<int>::max()) return failure(error::Code::VM_INTEGER_OVERFLOW, "integer overflow", ins.line);
+                if (*left == std::numeric_limits<int>::max()) return failure(error::Code::VM_INTEGER_OVERFLOW, "integer overflow");
                 const int incremented = *left + 1;
                 counter = incremented;
                 if (const auto* right = std::get_if<int>(&limit)) {
@@ -832,12 +832,12 @@ error::Result<std::optional<Value>> Machine::execute() {
                     break;
                 }
                 const auto right = limit.AsNumber();
-                if (!right) return failure(error::Code::VM_COMPARISON_EXPECTS_NUMBERS, "comparison expects numbers", ins.line);
+                if (!right) return failure(error::Code::VM_COMPARISON_EXPECTS_NUMBERS, "comparison expects numbers");
                 if (static_cast<double>(incremented) <= *right) frame.ip = ins.c;
                 else bump();
                 break;
             }
-            counter = binary(Op::Add, counter, Value::Integer(1), ins.line);
+            counter = binary(Op::Add, counter, Value::Integer(1));
             if (const auto* left = std::get_if<int>(&counter); left) {
                 if (const auto* right = std::get_if<int>(&limit); right) {
                     if (*left <= *right) frame.ip = ins.c;
@@ -847,7 +847,7 @@ error::Result<std::optional<Value>> Machine::execute() {
             }
             const auto left = counter.AsNumber();
             const auto right = limit.AsNumber();
-            if (!left || !right) return failure(error::Code::VM_COMPARISON_EXPECTS_NUMBERS, "comparison expects numbers", ins.line);
+            if (!left || !right) return failure(error::Code::VM_COMPARISON_EXPECTS_NUMBERS, "comparison expects numbers");
             if (*left <= *right) frame.ip = ins.c;
             else bump();
             break;
@@ -856,12 +856,12 @@ error::Result<std::optional<Value>> Machine::execute() {
         case Op::CallNative: {
             if (_state.hasRuntimeError) return pendingError();
             if (ins.d > 0 && static_cast<size_t>(ins.c) + ins.d > frame.regs.size()) {
-                return failure(error::Code::VM_INTERNAL_ARGUMENT_FAULT, "internal argument fault", ins.line);
+                return failure(error::Code::VM_INTERNAL_ARGUMENT_FAULT, "internal argument fault");
             }
             const std::span<const Value> args(frame.regs.data() + ins.c, ins.d);
             bump();
             if (ins.op == Op::CallNative) {
-                if (ins.b >= _state.natives.size()) return failure(error::Code::VM_INTERNAL_NATIVE_FAULT, "internal native fault", ins.line);
+                if (ins.b >= _state.natives.size()) return failure(error::Code::VM_INTERNAL_NATIVE_FAULT, "internal native fault");
                 Value result = _state.natives[ins.b](_engine, args);
                 if (_state.hasRuntimeError) {
                     return pendingError();
@@ -869,7 +869,7 @@ error::Result<std::optional<Value>> Machine::execute() {
                 _state.runStack.back().frames.back().regs[ins.a] = std::move(result);
                 break;
             }
-            if (ins.b >= _state.functions.size()) return failure(error::Code::VM_INTERNAL_FUNCTION_FAULT, "internal function fault", ins.line);
+            if (ins.b >= _state.functions.size()) return failure(error::Code::VM_INTERNAL_FUNCTION_FAULT, "internal function fault");
             const Chunk& callee = _state.functions[ins.b];
             Frame next;
             next.function = ins.b;
@@ -918,18 +918,18 @@ error::Result<std::optional<Value>> Machine::execute() {
             Value object = fastReg(frame, ins.b);
             Value index = fastReg(frame, ins.c);
             const auto* slot = std::get_if<int>(&index);
-            if (!slot || *slot < 0) return failure(error::Code::VM_INDEX_MUST_BE_NON_NEGATIVE_INT, "index must be a non-negative int", ins.line);
+            if (!slot || *slot < 0) return failure(error::Code::VM_INDEX_MUST_BE_NON_NEGATIVE_INT, "index must be a non-negative int");
             if (const auto* text = object.AsStringData()) {
-                if (static_cast<size_t>(*slot) >= text->size()) return failure(error::Code::VM_STRING_INDEX_OUT_OF_RANGE, "string index out of range", ins.line);
+                if (static_cast<size_t>(*slot) >= text->size()) return failure(error::Code::VM_STRING_INDEX_OUT_OF_RANGE, "string index out of range");
                 write(ins.a, Value::String(std::string(1, (*text)[static_cast<size_t>(*slot)])));
                 bump();
                 break;
             }
             if (!object.IsTable()) {
-                return failure(error::Code::VM_VALUE_NOT_INDEXABLE, "value cannot be indexed", ins.line);
+                return failure(error::Code::VM_VALUE_NOT_INDEXABLE, "value cannot be indexed");
             }
             const TableHandle& table = std::get<TableHandle>(object);
-            if (static_cast<size_t>(*slot) >= table->size()) return failure(error::Code::VM_TABLE_INDEX_OUT_OF_RANGE, "table index out of range", ins.line);
+            if (static_cast<size_t>(*slot) >= table->size()) return failure(error::Code::VM_TABLE_INDEX_OUT_OF_RANGE, "table index out of range");
             write(ins.a, (*table)[static_cast<size_t>(*slot)]);
             bump();
             break;
@@ -939,11 +939,11 @@ error::Result<std::optional<Value>> Machine::execute() {
             Value value = fastReg(frame, ins.c);
             Value object = fastReg(frame, ins.a);
             const auto* slot = std::get_if<int>(&index);
-            if (!slot || *slot < 0) return failure(error::Code::VM_INDEX_MUST_BE_NON_NEGATIVE_INT, "index must be a non-negative int", ins.line);
-            if (!object.IsTable()) return failure(error::Code::VM_VALUE_NOT_INDEXABLE, "value cannot be indexed", ins.line);
+            if (!slot || *slot < 0) return failure(error::Code::VM_INDEX_MUST_BE_NON_NEGATIVE_INT, "index must be a non-negative int");
+            if (!object.IsTable()) return failure(error::Code::VM_VALUE_NOT_INDEXABLE, "value cannot be indexed");
             TableHandle container = std::get<TableHandle>(object);
-            if (static_cast<size_t>(*slot) >= container->size()) return failure(error::Code::VM_TABLE_INDEX_OUT_OF_RANGE, "table index out of range", ins.line);
-            if (createsCycle(value, container)) return failure(error::Code::VM_CYCLIC_TABLE_OWNERSHIP, "cyclic table ownership is not supported", ins.line);
+            if (static_cast<size_t>(*slot) >= container->size()) return failure(error::Code::VM_TABLE_INDEX_OUT_OF_RANGE, "table index out of range");
+            if (createsCycle(value, container)) return failure(error::Code::VM_CYCLIC_TABLE_OWNERSHIP, "cyclic table ownership is not supported");
             (*container)[static_cast<size_t>(*slot)] = std::move(value);
             bump();
             break;
@@ -952,10 +952,10 @@ error::Result<std::optional<Value>> Machine::execute() {
         case Op::SetProp:
         case Op::CallMethod: {
             if (_state.hasRuntimeError) return pendingError();
-            const std::string_view name = _state.constantString(chunk, ins.op == Op::SetProp ? ins.b : ins.c, ins.line);
+            const std::string_view name = _state.constantString(chunk, ins.op == Op::SetProp ? ins.b : ins.c);
             if (_state.hasRuntimeError) return pendingError();
             Value object = fastReg(frame, ins.op == Op::SetProp ? ins.a : ins.b);
-            if (!object.IsObject()) return failure(error::Code::VM_VALUE_HAS_NO_PROPERTIES, "value has no properties", ins.line);
+            if (!object.IsObject()) return failure(error::Code::VM_VALUE_HAS_NO_PROPERTIES, "value has no properties");
             IScriptObject* target = std::get<Handle>(object).get();
             if (ins.op == Op::GetProp) {
                 bump();
@@ -1001,7 +1001,7 @@ error::Result<std::optional<Value>> Machine::execute() {
             const Value& index = fastReg(frame, ins.c);
             const auto* slot = std::get_if<int>(&index);
             if (!slot || *slot < 0 || !object.IsTable()) {
-                return failure(error::Code::VM_ADDRESS_EXPECTS_TABLE_ELEMENT, "address expects a table element", ins.line);
+                return failure(error::Code::VM_ADDRESS_EXPECTS_TABLE_ELEMENT, "address expects a table element");
             }
             const TableHandle& container = std::get<TableHandle>(object);
             const uint32_t tableIndex = static_cast<uint32_t>(*slot);
@@ -1027,7 +1027,7 @@ error::Result<std::optional<Value>> Machine::execute() {
         }
         case Op::LoadRef: {
             Value ref = fastReg(frame, ins.b);
-            Value* target = referenced(ref, ins.line);
+            Value* target = referenced(ref);
             if (!target) return pendingError();
             promoteString(*target);
             write(ins.a, *target);
@@ -1041,10 +1041,10 @@ error::Result<std::optional<Value>> Machine::execute() {
                 if (ref.IsReference()) {
                     const auto* target = std::get_if<IndexedReference>(&ref);
                     if (target && createsCycle(incoming, target->container)) {
-                        return failure(error::Code::VM_CYCLIC_TABLE_OWNERSHIP, "cyclic table ownership is not supported", ins.line);
+                        return failure(error::Code::VM_CYCLIC_TABLE_OWNERSHIP, "cyclic table ownership is not supported");
                     }
                 }
-                Value* target = referenced(ref, ins.line);
+                Value* target = referenced(ref);
                 if (!target) return pendingError();
                 *target = std::move(incoming);
                 promoteString(*target);
@@ -1056,7 +1056,7 @@ error::Result<std::optional<Value>> Machine::execute() {
             Value index = fastReg(frame, ins.b);
             const auto* slot = std::get_if<int>(&index);
             if (!slot || *slot < 0 || static_cast<size_t>(*slot) >= _state.globals.size()) {
-                return failure(error::Code::VM_GLOBAL_INDEX_OUT_OF_RANGE, "global index out of range", ins.line);
+                return failure(error::Code::VM_GLOBAL_INDEX_OUT_OF_RANGE, "global index out of range");
             }
             const uint32_t globalSlot = static_cast<uint32_t>(*slot);
             promoteString(_state.globals[globalSlot].value);
@@ -1072,10 +1072,10 @@ error::Result<std::optional<Value>> Machine::execute() {
             Value index = fastReg(frame, ins.c);
             const auto* slot = std::get_if<int>(&index);
             if (!slot || *slot < 0 || !object.IsString()) {
-                return failure(error::Code::VM_CHARACTER_INDEX_EXPECTS_STRING, "character index expects a string", ins.line);
+                return failure(error::Code::VM_CHARACTER_INDEX_EXPECTS_STRING, "character index expects a string");
             }
             const std::string text = object.ToString();
-            if (static_cast<size_t>(*slot) >= text.size()) return failure(error::Code::VM_STRING_INDEX_OUT_OF_RANGE, "string index out of range", ins.line);
+            if (static_cast<size_t>(*slot) >= text.size()) return failure(error::Code::VM_STRING_INDEX_OUT_OF_RANGE, "string index out of range");
             write(ins.a, Value::Integer(static_cast<unsigned char>(text[static_cast<size_t>(*slot)])));
             bump();
             break;
@@ -1085,7 +1085,7 @@ error::Result<std::optional<Value>> Machine::execute() {
             Value index = fastReg(frame, ins.b);
             Value incoming = fastReg(frame, ins.c);
             const auto* slot = std::get_if<int>(&index);
-            if (!slot || *slot < 0) return failure(error::Code::VM_CHARACTER_INDEX_EXPECTS_STRING, "character index expects a string", ins.line);
+            if (!slot || *slot < 0) return failure(error::Code::VM_CHARACTER_INDEX_EXPECTS_STRING, "character index expects a string");
             char byte = 0;
             if (const auto* number = std::get_if<int>(&incoming)) byte = static_cast<char>(*number);
             else if (const auto* text = incoming.AsStringData()) {
@@ -1093,23 +1093,23 @@ error::Result<std::optional<Value>> Machine::execute() {
             } else if (incoming.IsString() && !incoming.ToString().empty()) byte = incoming.ToString()[0];
             auto* stored = mutableStringData(object);
             if (!stored) {
-                return failure(error::Code::VM_CHARACTER_INDEX_EXPECTS_STRING, "character index expects a string", ins.line);
+                return failure(error::Code::VM_CHARACTER_INDEX_EXPECTS_STRING, "character index expects a string");
             }
-            if (static_cast<size_t>(*slot) >= stored->size()) return failure(error::Code::VM_STRING_INDEX_OUT_OF_RANGE, "string index out of range", ins.line);
+            if (static_cast<size_t>(*slot) >= stored->size()) return failure(error::Code::VM_STRING_INDEX_OUT_OF_RANGE, "string index out of range");
             (*stored)[static_cast<size_t>(*slot)] = byte;
             bump();
             break;
         }
         case Op::NewObj: {
-            const std::string_view type = _state.constantString(chunk, ins.b, ins.line);
+            const std::string_view type = _state.constantString(chunk, ins.b);
             if (_state.hasRuntimeError) return pendingError();
             auto factory = _state.factories.find(std::string(type));
             if (factory == _state.factories.end() || !factory->second) {
-                return failure(error::Code::VM_UNKNOWN_TYPE, "unknown type '" + std::string(type) + "'", ins.line);
+                return failure(error::Code::VM_UNKNOWN_TYPE, "unknown type '" + std::string(type) + "'");
             }
             std::shared_ptr<IScriptObject> object = factory->second();
             if (!object) {
-                return failure(error::Code::VM_UNKNOWN_TYPE, "unknown type '" + std::string(type) + "'", ins.line);
+                return failure(error::Code::VM_UNKNOWN_TYPE, "unknown type '" + std::string(type) + "'");
             }
             write(ins.a, Value(std::move(object)));
             bump();
@@ -1119,7 +1119,7 @@ error::Result<std::optional<Value>> Machine::execute() {
             Value value = fastReg(frame, ins.b);
             std::string format;
             if (ins.d != 65535) {
-                format = std::string(_state.constantString(chunk, ins.d, ins.line));
+                format = std::string(_state.constantString(chunk, ins.d));
                 if (_state.hasRuntimeError) return pendingError();
             }
             if (ins.c == 2 && value.IsString()) {
@@ -1143,7 +1143,7 @@ error::Result<std::optional<Value>> Machine::execute() {
             if (ins.c == 0) {
                 if (const auto* integerValue = std::get_if<int>(&value)) write(ins.a, Value::Integer(*integerValue));
                 else if (const auto* realValue = std::get_if<float>(&value)) {
-                    write(ins.a, Value::Integer(narrowInt(*realValue, ins.line)));
+                    write(ins.a, Value::Integer(narrowInt(*realValue)));
                 }
                 else if (const auto* flag = std::get_if<bool>(&value)) write(ins.a, Value::Integer(*flag ? 1 : 0));
                 else if (value.IsString()) {
@@ -1164,10 +1164,10 @@ error::Result<std::optional<Value>> Machine::execute() {
             if (_state.hasRuntimeError) return pendingError();
             // Имя ищется линейно: сначала скриптовые функции, потом нативы.
             // Нет ни там, ни там — в регистр пишется int 0, не null и не ошибка.
-            const std::string_view name = _state.constantString(chunk, ins.b, ins.line);
+            const std::string_view name = _state.constantString(chunk, ins.b);
             if (_state.hasRuntimeError) return pendingError();
             if (ins.d > 0 && static_cast<size_t>(ins.c) + ins.d > frame.regs.size()) {
-                return failure(error::Code::VM_INTERNAL_ARGUMENT_FAULT, "internal argument fault", ins.line);
+                return failure(error::Code::VM_INTERNAL_ARGUMENT_FAULT, "internal argument fault");
             }
             const std::span<const Value> args(frame.regs.data() + ins.c, ins.d);
             bump();
@@ -1207,7 +1207,7 @@ error::Result<std::optional<Value>> Machine::execute() {
             break;
         }
         default:
-            return failure(error::Code::VM_UNKNOWN_INSTRUCTION, "unknown instruction", ins.line);
+            return failure(error::Code::VM_UNKNOWN_INSTRUCTION, "unknown instruction");
         }
     }
 }

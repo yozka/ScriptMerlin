@@ -158,10 +158,10 @@ struct State
     const error::Error& GetRuntimeError() const;
 
     // Вид живёт в пуле констант chunk, пока этот chunk не заменят.
-    std::string_view constantString(const Chunk& chunk, size_t index, int line);
+    std::string_view constantString(const Chunk& chunk, size_t index);
 
-    error::Error MakeRuntimeError(error::Code code, std::string text, int line = 0) const;
-	void RecordRuntimeError(error::Code code, const std::string& text, int line = 0);
+    error::Error MakeRuntimeError(error::Code code, std::string text) const;
+	void RecordRuntimeError(error::Code code, const std::string& text);
     void RecordRuntimeError(const error::Error& error);
 };
 

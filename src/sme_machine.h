@@ -21,17 +21,17 @@ public:
 private:
     // nullopt значит «встали на stop», значение — нормальный return наружу.
     error::Result<std::optional<Value>> execute();
-    int checkedIntAdd(int x, int y, int line);
-    int checkedIntSub(int x, int y, int line);
-    int checkedIntMul(int x, int y, int line);
-    Value intBinary(Op op, int x, int y, int line);
-    int narrowInt(double number, int line);
-    Value* referenced(const Value& value, int line);
-    Value materialize(const Chunk& chunk, size_t constant, int line);
-    Value binary(Op op, const Value& lhs, const Value& rhs, int line);
-    Value unary(Op op, const Value& value, int line);
+    int checkedIntAdd(int x, int y);
+    int checkedIntSub(int x, int y);
+    int checkedIntMul(int x, int y);
+    Value intBinary(Op op, int x, int y);
+    int narrowInt(double number);
+    Value* referenced(const Value& value);
+    Value materialize(const Chunk& chunk, size_t constant);
+    Value binary(Op op, const Value& lhs, const Value& rhs);
+    Value unary(Op op, const Value& value);
     bool equals(const Value& lhs, const Value& rhs);
-    int compare(const Value& lhs, const Value& rhs, int line);
+    int compare(const Value& lhs, const Value& rhs);
 
     Engine& _engine;
     State& _state;
