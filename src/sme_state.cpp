@@ -69,7 +69,7 @@ void State::ClearRuntimeError() {
 
 const error::Error& State::GetRuntimeError() const {
     SME_ASSERT(hasRuntimeError && runtimeError.has_value());
-    return *runtimeError;
+    return runtimeError.value();
 }
 
 void State::RecordRuntimeError(const error::Error& error) {
