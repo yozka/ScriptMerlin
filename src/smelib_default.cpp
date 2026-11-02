@@ -10,6 +10,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 
@@ -269,7 +270,7 @@ void sme::library::InstallDefault(Engine& engine)
 	
 	
 	// call(fid) или call(аргументы..., fid). Индекс функции — последний аргумент.
-	// Неизвестный индекс бросает ошибку из callIndex, а не возвращает 0.
+	// Ошибка callIndex прерывает весь активный скриптовый вызов.
 	engine.RegisterFn("call", [](Engine& engine, std::span<const Value> args)
 	{
 		if (args.size() == 1 && args[0].IsInteger()) {
@@ -279,7 +280,9 @@ void sme::library::InstallDefault(Engine& engine)
 				return Value::Null();
 			}
 			
-			return engine.callIndex(static_cast<size_t>(i), {});
+			auto result = engine.callIndex(static_cast<size_t>(i), {});
+			if (result.error) return Value::Null();
+			return std::move(static_cast<Value&>(result));
 		}
 		if (args.size() >= 2 && args.back().IsInteger()) {
 			const int i = args.back().ToInteger();
@@ -289,7 +292,9 @@ void sme::library::InstallDefault(Engine& engine)
 			}
 			
 			const std::span<const Value> forwarded = args.first(args.size() - 1);
-			return engine.callIndex(static_cast<size_t>(i), forwarded);
+			auto result = engine.callIndex(static_cast<size_t>(i), forwarded);
+			if (result.error) return Value::Null();
+			return std::move(static_cast<Value&>(result));
 		}
 		return Value::Integer(0);
 	});

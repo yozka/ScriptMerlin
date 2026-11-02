@@ -52,14 +52,16 @@ int main()
 {
     sme::Engine engine;
 
-    engine.RegisterFn("add", [](sme::Engine&, std::span<const sme::Value> args) {
+    engine.RegisterFn("add", [](sme::Engine& engine, std::span<const sme::Value> args) {
         if (args.size() != 2) {
-            throw sme::RError("add expects 2 arguments");
+            engine.RuntimeError(sme::error::Code::FUNCTION_ARGUMENTS, "add expects 2 arguments");
+            return sme::Value::Null();
         }
         const auto* left = std::get_if<int>(&args[0]);
         const auto* right = std::get_if<int>(&args[1]);
         if (!left || !right) {
-            throw sme::RError("add expects integer arguments");
+            engine.RuntimeError(sme::error::Code::FUNCTION_ARGUMENTS, "add expects integer arguments");
+            return sme::Value::Null();
         }
         return sme::Value::Integer(*left + *right);
     });
@@ -74,8 +76,12 @@ int main()
         return 1;
     }
 
-    const sme::Value result = engine.call("main");
-    std::cout << result.ToString() << '\n';
+    auto result = engine.call("main");
+    if (result.error) {
+        std::cerr << result.error->message() << '\n';
+        return 1;
+    }
+    std::cout << result.value().ToString() << '\n';
 }
 ```
 
@@ -142,6 +148,9 @@ cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/install
 вызов и даже уничтожение `Engine`. Явные якоря времени жизни не нужны.
 
 Чтобы shared ownership оставался ограниченным временем жизни внешних значений,
-циклическое владение таблицами запрещено и приводит к `sme::RError`.
-
-Существующие Ошибки выполнения скрипта представлены исключением `sme::RError`.
+циклическое владение таблицами запрещено и завершается runtime-ошибкой.
+`Engine::call`, `callIndex` и `resume` возвращают `sme::error::Result<sme::Value>`;
+первая runtime-ошибка останавливает текущую цепочку выполнения и содержит
+диагностику с местом возникновения и стеком скрипта. В callback-ах сообщайте
+об ошибке через `Engine::RuntimeError(code, message)`, затем возвращайте
+обычное значение-заглушку: VM отбросит его и вернёт ошибочный `Result`.

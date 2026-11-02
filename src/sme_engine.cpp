@@ -43,13 +43,6 @@ namespace sme
 	}
 
 
-	void Engine::SetErrorHandle(error::IHandler::Ptr error)
-	{
-		SME_ASSERT(error, "error system is empty");
-		_state->errorHandler = std::move(error);
-	}
-
-
 	void Engine::Log(const log::Level level, const std::string& text)
 	{
 		if (_state->log) {
@@ -60,7 +53,7 @@ namespace sme
 
 	void Engine::RuntimeError(const error::Code code, const std::string& text)
 	{
-		_state->RuntimeError({code, text});
+		_state->RecordRuntimeError(code, text);
 	}
 
 
@@ -209,25 +202,42 @@ namespace sme
 	}
 
 
-	// Общий путь call и callIndex: выполнить и вернуть владеющее значение.
-	// Ошибка пишется в лог, если хост его подключил, и пробрасывается дальше.
-	Value Engine::invoke(size_t index, std::span<const Value> args) {
-		try {
-			return Machine(*this, *_state).run(index, args);
-		} catch (const RError& error) {
-			if (_state->log) {
-				_state->log->message(log::Level::Error, error.what());
-			}
-			throw;
+	// Общий путь call и callIndex: выполнить и вернуть владеющее значение либо ошибку.
+	error::Result<Value> Engine::invoke(size_t index, std::span<const Value> args) {
+		const bool nested = !_state->runStack.empty();
+		if (!nested) {
+			_state->ClearRuntimeError();
+		} else if (_state->hasRuntimeError) {
+			return {Value::Null(), _state->GetRuntimeError()};
 		}
+		auto result = Machine(*this, *_state).run(index, args);
+		if (result.error) {
+			if (nested) {
+				_state->RecordRuntimeError(result.error.value());
+				return {Value::Null(), _state->GetRuntimeError()};
+			}
+			_state->ClearRuntimeError();
+		}
+		return result;
 	}
 
-	Value Engine::call(std::string_view function, std::span<const Value> args) {
+	error::Result<Value> Engine::call(std::string_view function, std::span<const Value> args) {
+		if (_state->runStack.empty()) {
+			_state->ClearRuntimeError();
+		} else if (_state->hasRuntimeError) {
+			return {Value::Null(), _state->GetRuntimeError()};
+		}
 		const auto it = std::find_if(_state->functions.begin(), _state->functions.end(), [&](const Chunk& chunk) {
 			return chunk.name == function;
 		});
 		if (it == _state->functions.end()) {
-			throw RError("unknown function '" + std::string(function) + "'");
+			error::Error error = _state->MakeRuntimeError(error::Code::ENGINE_UNKNOWN_FUNCTION,
+				"unknown function '" + std::string(function) + "'");
+			if (!_state->runStack.empty()) {
+				_state->RecordRuntimeError(error.code(), error.message());
+				return {Value::Null(), _state->GetRuntimeError()};
+			}
+			return {Value::Null(), std::move(error)};
 		}
 		const auto index = static_cast<size_t>(std::distance(_state->functions.begin(), it));
 		return invoke(index, args);
@@ -246,20 +256,22 @@ namespace sme
 		return chunk.code[frame.ip - 1].op == Op::Stop;
 	}
 
-	Value Engine::resume()
+	error::Result<Value> Engine::resume()
 	{
+		if (_state->hasRuntimeError) {
+			error::Error error = _state->GetRuntimeError();
+			_state->ClearRuntimeError();
+			return {Value::Null(), std::move(error)};
+		}
 		if (!stopped()) {
 			SME_ASSERT_FAIL("script is not stopped");
-			return {};
+			return {Value::Null(), _state->MakeRuntimeError(error::Code::ENGINE_NOT_STOPPED, "script is not stopped")};
 		}
-		try {
-			return Machine(*this, *_state).resume();
-		} catch (const RError& error) {
-			if (_state->log) {
-				_state->log->message(log::Level::Error, error.what());
-			}
-			throw;
+		auto result = Machine(*this, *_state).resume();
+		if (result.error) {
+			_state->ClearRuntimeError();
 		}
+		return result;
 	}
 
 	Value Engine::globalAt(size_t index) const {
@@ -288,9 +300,20 @@ namespace sme
 		return std::nullopt;
 	}
 
-	Value Engine::callIndex(size_t index, std::span<const Value> args) {
+	error::Result<Value> Engine::callIndex(size_t index, std::span<const Value> args) {
+		if (_state->runStack.empty()) {
+			_state->ClearRuntimeError();
+		} else if (_state->hasRuntimeError) {
+			return {Value::Null(), _state->GetRuntimeError()};
+		}
 		if (index >= _state->functions.size()) {
-			throw RError("unknown function");
+			error::Error error = _state->MakeRuntimeError(error::Code::ENGINE_FUNCTION_INDEX_OUT_OF_RANGE,
+				"function index is out of range");
+			if (!_state->runStack.empty()) {
+				_state->RecordRuntimeError(error.code(), error.message());
+				return {Value::Null(), _state->GetRuntimeError()};
+			}
+			return {Value::Null(), std::move(error)};
 		}
 		return invoke(index, args);
 	}
@@ -332,7 +355,7 @@ namespace sme
 	{
 		Value target = follow(table);
 		if (!target.IsTable()) {
-			SME_ASSERT_FAIL("tabresize expects a table");
+			RuntimeError(error::Code::ENGINE_TABRESIZE_EXPECTS_TABLE, "tabresize expects a table");
 			return;
 		}
 		std::get<TableHandle>(target)->resize(size, Value::Integer(0));

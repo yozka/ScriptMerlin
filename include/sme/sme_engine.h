@@ -45,10 +45,9 @@ namespace sme
 	public:
 		
 		// Подмена диска и логгера. load и #include читают через эту файловую систему.
-		// Логгер получает ошибки call/resume и println.
+		// Логгер получает сообщения и println.
 		void SetFileSystem(files::IFileSystem::Ptr files);
 		void SetLog(log::ILogging::Ptr log);
-		void SetErrorHandle(error::IHandler::Ptr error);
 		
 	public:
 		// Натив виден скрипту как обычная функция. Повторное имя — ошибка.
@@ -65,8 +64,9 @@ namespace sme
 		// Индекс функции или глобала. nullopt — имени нет.
 		std::optional<size_t> findFunction(std::string_view name) const;
 		std::optional<size_t> findGlobal(std::string_view name) const;
-		// Вызов по индексу. Индекс вне таблицы функций — ошибка, не тихий 0.
-		Value callIndex(size_t index, std::span<const Value> args);
+		// Вызов по индексу. Ошибки выполнения возвращаются в Result и останавливают
+		// всю активную цепочку вызовов.
+		error::Result<Value> callIndex(size_t index, std::span<const Value> args);
 		
 		// Если value — ссылка, вернуть то, на что она указывает. Иначе само value.
 		// Протухшая ссылка читается как null, без исключения.
@@ -82,11 +82,11 @@ namespace sme
 		error::Error::Opt LoadSource(std::string_view source, std::string_view name = "script");
 		
 		// Недостающие аргументы приходят как null, лишние отбрасываются — как при
-		// вызове скрипт→скрипт. Результат владеет данными и может храниться дольше Engine.
-		Value call(std::string_view function, std::span<const Value> args = {});
+		// вызове скрипт→скрипт. Result содержит значение или первую runtime-ошибку.
+		error::Result<Value> call(std::string_view function, std::span<const Value> args = {});
 		// Верхний кадр стоит сразу за stop. Вложенный call чужую паузу не снимает.
 		bool stopped() const;
-		Value resume();
+		error::Result<Value> resume();
 		Value globalAt(size_t index) const;
 		
 	public:
@@ -95,7 +95,7 @@ namespace sme
 		
 	private:
 		error::Error::Opt CompileUnit(const struct SourceUnit& unit, std::string_view name);
-		Value invoke(size_t index, std::span<const Value> args);
+		error::Result<Value> invoke(size_t index, std::span<const Value> args);
 		std::unique_ptr<State> _state;
 	};
 
