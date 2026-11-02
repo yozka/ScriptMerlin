@@ -31,6 +31,13 @@ cmake -S . -B build -DSME_EXAMPLE=OFF -DSME_TEST=OFF
 cmake --build build
 ```
 
+По умолчанию используется C++20. Для сборки с поддержкой C++23 включите
+параметр `SME_STANDART23`:
+
+```sh
+cmake -S . -B build -DSME_STANDART23=ON
+```
+
 Юнит-тесты используют GoogleTest, который CMake загружает при включённой опции `SME_TEST`.
 
 Максимальную глубину рекурсии скриптов можно настроить через `SME_MAX_RECURSION_DEPTH`

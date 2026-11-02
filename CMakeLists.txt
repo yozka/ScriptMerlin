@@ -5,7 +5,14 @@ project(ScriptMerlin VERSION 1.0.0 LANGUAGES CXX)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-set(CMAKE_CXX_STANDARD 20)
+option(SME_STANDART23 "Включить поддержку C++23" OFF)
+if(SME_STANDART23)
+    set(CMAKE_CXX_STANDARD 23)
+    set(SME_CXX_STANDARD_FEATURE cxx_std_23)
+else()
+    set(CMAKE_CXX_STANDARD 20)
+    set(SME_CXX_STANDARD_FEATURE cxx_std_20)
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -77,7 +84,7 @@ target_include_directories(ScriptMerlin
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_compile_features(ScriptMerlin PUBLIC cxx_std_20)
+target_compile_features(ScriptMerlin PUBLIC ${SME_CXX_STANDARD_FEATURE})
 target_compile_definitions(ScriptMerlin PRIVATE
     SME_MAX_CALL_DEPTH=${SME_MAX_CALL_DEPTH}
     SME_MAX_RECURSION_DEPTH=${SME_MAX_RECURSION_DEPTH}
