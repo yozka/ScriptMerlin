@@ -77,6 +77,10 @@ namespace sme
 			SME_ASSERT_FAIL("bind expects an object");
 			return;
 		}
+		if (_state->constants.contains(name)) {
+			SME_ASSERT_FAIL("global '" + name + "' conflicts with a constant");
+			return;
+		}
 		for (const Chunk& chunk : _state->functions) {
 			if (chunk.name == name) {
 				SME_ASSERT_FAIL("global '" + name + "' shadows function '" + name + "'");
@@ -91,6 +95,54 @@ namespace sme
 			}
 		}
 		_state->globals.push_back(Global{std::move(name), std::move(value)});
+	}
+
+	void Engine::SetGlobal(std::string name, Value value) {
+		if (_state->constants.contains(name)) {
+			SME_ASSERT_FAIL("global '" + name + "' conflicts with a constant");
+			return;
+		}
+		for (const Chunk& chunk : _state->functions) {
+			if (chunk.name == name) {
+				SME_ASSERT_FAIL("global '" + name + "' shadows function '" + name + "'");
+				return;
+			}
+		}
+		for (Global& global : _state->globals) {
+			if (global.name == name) {
+				global.value = std::move(value);
+				return;
+			}
+		}
+		_state->globals.push_back(Global{std::move(name), std::move(value)});
+	}
+
+	void Engine::SetConstant(std::string name, Value value) {
+		if (!_state->functions.empty()) {
+			SME_ASSERT_FAIL("constants must be registered before loading scripts");
+			return;
+		}
+		if (std::any_of(_state->globals.begin(), _state->globals.end(), [&](const Global& global) {
+			return global.name == name;
+		})) {
+			SME_ASSERT_FAIL("constant '" + name + "' conflicts with a global");
+			return;
+		}
+
+		if (!value.IsNull() && !value.IsInteger() && !value.IsFloat() &&
+			!value.IsBool() && !value.IsString() && !value.IsPointer()) {
+			SME_ASSERT_FAIL("constant '" + name + "' must be a scalar value");
+			return;
+		}
+		_state->constants[std::move(name)] = std::move(value);
+	}
+
+	void Engine::RegisterInteger(std::string name, const int value) {
+		SetConstant(std::move(name), Value::Integer(value));
+	}
+
+	void Engine::RegisterString(std::string name, std::string value) {
+		SetConstant(std::move(name), Value::String(std::move(value)));
 	}
 
 
@@ -132,8 +184,7 @@ namespace sme
 			}
 			return Value::Null();
 		};
-		for (const std::string& global : unit.globals) addGlobal(global, Value::Null());
-		for (const Literal& literal : unit.literals) {
+		auto literalValue = [](const Literal& literal) {
 			Value value = Value::Null();
 			switch (literal.kind) {
 				case Literal::Kind::Int: value = Value::Integer(literal.integer); break;
@@ -142,16 +193,8 @@ namespace sme
 				case Literal::Kind::Pointer: value = Value::Pointer(); break;
 				case Literal::Kind::Null: break;
 			}
-			bool replaced = false;
-			for (Global& existing : _state->globals) {
-				if (existing.name == literal.name) {
-					existing.value = std::move(value);
-					replaced = true;
-					break;
-				}
-			}
-			if (!replaced) addGlobal(literal.name, std::move(value));
-		}
+			return value;
+		};
 		for (const GlobalDecl& global : program.globals) addGlobal(global.name, initial(global.kind));
 		
 		CompileEnv env;
@@ -160,6 +203,10 @@ namespace sme
 		}
 		for (uint16_t index = 0; index < _state->globals.size(); ++index) {
 			env.globals.emplace(_state->globals[index].name, index);
+		}
+		env.constants = _state->constants;
+		for (const Literal& literal : unit.literals) {
+			env.constants.insert_or_assign(literal.name, literalValue(literal));
 		}
 		_state->sourceName = std::string(name);
 		auto compiled = compile(program, env, name);
@@ -203,7 +250,7 @@ namespace sme
 
 
 	// Общий путь call и callIndex: выполнить и вернуть владеющее значение либо ошибку.
-	error::Result<Value> Engine::Invoke(size_t index, std::span<const Value> args) {
+	error::Result<Value> Engine::Invoke(size_t index, Arguments args) {
 		const bool nested = !_state->runStack.empty();
 		if (!nested) {
 			_state->ClearRuntimeError();
@@ -221,7 +268,8 @@ namespace sme
 		return result;
 	}
 
-	error::Result<Value> Engine::Call(std::string_view function, std::span<const Value> args) {
+	error::Result<Value> Engine::Call(std::string_view function, Arguments args)
+	{
 		if (_state->runStack.empty()) {
 			_state->ClearRuntimeError();
 		} else if (_state->hasRuntimeError) {
@@ -245,7 +293,7 @@ namespace sme
 
 	// Пауза — свойство верхнего кадра, а не отдельный флаг. Вложенный call,
 	// который доработал до конца, не имеет права погасить stop нижнего кадра.
-	bool Engine::Stopped() const {
+	bool Engine::IsStopped() const {
 		if (_state->runStack.empty()) return false;
 		const RunState& active = _state->runStack.back();
 		if (active.frames.empty()) return false;
@@ -263,7 +311,7 @@ namespace sme
 			_state->ClearRuntimeError();
 			return {Value::Null(), std::move(error)};
 		}
-		if (!Stopped()) {
+		if (!IsStopped()) {
 			SME_ASSERT_FAIL("script is not stopped");
 			return {Value::Null(), _state->MakeRuntimeError(error::Code::ENGINE_NOT_STOPPED, "script is not stopped")};
 		}
@@ -274,7 +322,8 @@ namespace sme
 		return result;
 	}
 
-	Value Engine::GlobalAt(size_t index) const {
+	Value Engine::GlobalAt(size_t index) const
+	{
 		if (index >= _state->globals.size()) {
 			return Value::Null();
 		}
@@ -282,7 +331,8 @@ namespace sme
 	}
 
 
-	std::optional<size_t> Engine::FindFunction(std::string_view name) const {
+	std::optional<size_t> Engine::FindFunction(std::string_view name) const
+	{
 		for (size_t index = 0; index < _state->functions.size(); ++index) {
 			if (_state->functions[index].name == name) {
 				return index;
@@ -291,7 +341,8 @@ namespace sme
 		return std::nullopt;
 	}
 
-	std::optional<size_t> Engine::FindGlobal(std::string_view name) const {
+	std::optional<size_t> Engine::FindGlobal(std::string_view name) const
+	{
 		for (size_t index = 0; index < _state->globals.size(); ++index) {
 			if (_state->globals[index].name == name) {
 				return index;
@@ -300,7 +351,7 @@ namespace sme
 		return std::nullopt;
 	}
 
-	error::Result<Value> Engine::CallIndex(size_t index, std::span<const Value> args) {
+	error::Result<Value> Engine::CallIndex(size_t index, Arguments args) {
 		if (_state->runStack.empty()) {
 			_state->ClearRuntimeError();
 		} else if (_state->hasRuntimeError) {
@@ -318,7 +369,8 @@ namespace sme
 		return Invoke(index, args);
 	}
 
-	Value Engine::Follow(const Value& value) const {
+	Value Engine::Follow(const Value& value) const
+	{
 		if (!value.IsReference()) {
 			return value;
 		}

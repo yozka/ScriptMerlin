@@ -31,7 +31,7 @@ public:
             "unknown property '" + std::string(name) + "'");
     }
 
-    sme::Value Call(sme::Engine& engine, std::string_view name, std::span<const sme::Value> args) override {
+    sme::Value Call(sme::Engine& engine, std::string_view name, sme::Arguments args) override {
         if (name == "add") {
             if (args.size() != 1) {
 				return {};

@@ -397,7 +397,7 @@ Value Machine::Binary(Op op, const Value& lhs, const Value& rhs) {
     return Value::Null();
 }
 
-error::Result<Value> Machine::Run(size_t function, std::span<const Value> args) {
+error::Result<Value> Machine::Run(size_t function, Arguments args) {
     if (_state.hasRuntimeError) {
         return {Value::Null(), _state.GetRuntimeError()};
     }
@@ -858,7 +858,7 @@ error::Result<std::optional<Value>> Machine::Execute() {
             if (ins.d > 0 && static_cast<size_t>(ins.c) + ins.d > frame.regs.size()) {
                 return failure(error::Code::VM_INTERNAL_ARGUMENT_FAULT, "internal argument fault");
             }
-            const std::span<const Value> args(frame.regs.data() + ins.c, ins.d);
+            const Arguments args(frame.regs.data() + ins.c, ins.d);
             bump();
             if (ins.op == Op::CallNative) {
                 if (ins.b >= _state.natives.size()) return failure(error::Code::VM_INTERNAL_NATIVE_FAULT, "internal native fault");
@@ -975,7 +975,7 @@ error::Result<std::optional<Value>> Machine::Execute() {
                 }
                 break;
             }
-            const std::span<const Value> args(frame.regs.data() + ins.d, ins.e);
+            const Arguments args(frame.regs.data() + ins.d, ins.e);
             bump();
             Value result = target->Call(_engine, name, args);
             if (_state.hasRuntimeError) {
@@ -1169,7 +1169,7 @@ error::Result<std::optional<Value>> Machine::Execute() {
             if (ins.d > 0 && static_cast<size_t>(ins.c) + ins.d > frame.regs.size()) {
                 return failure(error::Code::VM_INTERNAL_ARGUMENT_FAULT, "internal argument fault");
             }
-            const std::span<const Value> args(frame.regs.data() + ins.c, ins.d);
+            const Arguments args(frame.regs.data() + ins.c, ins.d);
             bump();
             auto function = std::find_if(_state.functions.begin(), _state.functions.end(), [&](const Chunk& item) {
                 return item.name == name;

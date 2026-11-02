@@ -7,9 +7,8 @@
 
 // Препроцессор. Директивы — отдельные строки: #include, #def, #ifdef/#ifndef,
 // #abort. #ifdef однострочный: берётся следующая непустая строка,
-// блока и #else нет. #def одновременно макрос для подстановки и начальное
-// значение глобала. Текст значения разбирает тот же лексер, что и скрипт,
-// чтобы 0b, 1e2 и ведущий ноль не разъехались.
+// блока и #else нет. #def задаёт compile-time макрос. Текст значения разбирает
+// тот же лексер, что и скрипт, чтобы 0b, 1e2 и ведущий ноль не разъехались.
 // #include ищет файл в переданной IFileSystem: рядом с текущим и в корне юнита.
 
 #include <algorithm>
@@ -192,15 +191,14 @@ namespace sme
 		std::string _current;
 		std::unordered_map<std::string, std::string> _defines;
 		std::unordered_set<std::string> _included;
-		std::vector<std::string> _globals;
-		std::unordered_set<std::string> _globalNames;
+		std::unordered_set<std::string> _emptyDefines;
 		std::vector<Literal> _literals;
 		error::Error::Opt _error;
 		bool _abort = false;
 		std::string _out;
 		
 		error::Result<SourceUnit> Finish() const {
-			return {SourceUnit{_out, _globals, _literals}, _error};
+			return {SourceUnit{_out, _literals}, _error};
 		}
 
 		void AddError(error::Code code, std::string message, const std::string& source, int line = 0) {
@@ -212,13 +210,7 @@ namespace sme
 		}
 		
 		bool Defined(const std::string& name) const {
-			return _defines.contains(name) || _globalNames.contains(name);
-		}
-		
-		void AddGlobal(const std::string& name) {
-			if (_globalNames.insert(name).second) {
-				_globals.push_back(name);
-			}
+			return _defines.contains(name) || _emptyDefines.contains(name);
 		}
 		
 		std::optional<std::string> Resolve(const std::string& current, const std::string& spec) const {
@@ -350,16 +342,19 @@ namespace sme
 				_literals.erase(std::remove_if(_literals.begin(), _literals.end(), [&](const Literal& item) {
 					return item.name == ident;
 				}), _literals.end());
-				AddGlobal(ident);
+				_emptyDefines.insert(ident);
+				Literal literal;
+				literal.name = ident;
+				_literals.push_back(std::move(literal));
 				return;
 			}
+			_emptyDefines.erase(ident);
 			_defines[ident] = value;
 			RememberLiteral(ident, value, name, lineNo);
 		}
 		
-		// Один литерал — и в глобал, и то, что потом увидит лексер в подстановке.
-		// Выражение вроде 1+2 литералом не является: глобал остаётся null,
-		// а в текст скрипта по-прежнему вставляется исходная строка.
+		// Для не-литерального выражения значение остаётся null; макрос при этом
+		// по-прежнему раскрывается в исходный текст выражения.
 		void RememberLiteral(const std::string& name, const std::string& value, const std::string& file, int lineNo) {
 			auto lexed = lex(value, file);
 			if (lexed.error) {
@@ -546,7 +541,6 @@ namespace sme
 
 	error::Result<SourceUnit> PreprocessSource(const files::IFileSystem::Ptr& files, std::string_view source, std::string_view name, const std::string& includeRoot)
 	{
-		SME_ASSERT(files, "file system is empty");
 		return Preprocessor(files, includeRoot).RunText(source, name);
 	}
 

@@ -124,8 +124,6 @@ namespace sme
 		std::string CastString() const;
 	};
 
-
-
 }
 
 namespace std

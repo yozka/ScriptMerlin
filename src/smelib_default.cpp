@@ -17,7 +17,7 @@
 void sme::library::InstallDefault(Engine& engine)
 {
 	
-	engine.RegisterFn("len", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("len", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "len expects 1 argument");
@@ -27,7 +27,7 @@ void sme::library::InstallDefault(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("str", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("str", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "str expects 1 argument");
@@ -44,7 +44,7 @@ void sme::library::InstallDefault(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("tab", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("tab", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "tab expects 1 argument");
@@ -58,7 +58,7 @@ void sme::library::InstallDefault(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("type", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("type", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "type expects 1 argument");
@@ -68,7 +68,7 @@ void sme::library::InstallDefault(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("print", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("print", [](Engine& engine, Arguments args)
 	{
 		std::string line;
 		for (size_t i = 0; i < args.size(); ++i) {
@@ -80,7 +80,7 @@ void sme::library::InstallDefault(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("println", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("println", [](Engine& engine, Arguments args)
 	{
 		std::string line;
 		for (size_t i = 0; i < args.size(); ++i) {
@@ -92,7 +92,7 @@ void sme::library::InstallDefault(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("strlen", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("strlen", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "strlen expects 1 argument");
@@ -110,7 +110,7 @@ void sme::library::InstallDefault(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("strsub", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("strsub", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 3) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "strsub expects 3 arguments");
@@ -132,7 +132,7 @@ void sme::library::InstallDefault(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("strpos", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("strpos", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 2) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "strpos expects 2 arguments");
@@ -147,7 +147,7 @@ void sme::library::InstallDefault(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("strexplode", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("strexplode", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 2) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "strexplode expects 2 arguments");
@@ -171,7 +171,7 @@ void sme::library::InstallDefault(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("strupr", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("strupr", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "strupr expects 1 arguments");
@@ -186,7 +186,7 @@ void sme::library::InstallDefault(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("strlwr", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("strlwr", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "strlwr expects 1 arguments");
@@ -201,7 +201,7 @@ void sme::library::InstallDefault(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("strtrim", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("strtrim", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 2) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "strtrim expects 2 arguments");
@@ -218,7 +218,7 @@ void sme::library::InstallDefault(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("sizeof", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("sizeof", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "sizeof expects 1 arguments");
@@ -235,19 +235,19 @@ void sme::library::InstallDefault(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("tabsize", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("tabsize", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "tabsize expects 1 arguments");
 			return Value::Null();
 		}
-		Value target = engine.Follow(args[0]);
+		const Value target = engine.Follow(args[0]);
 		if (!target.IsTable()) return Value::Integer(0);
 		return Value::Integer(static_cast<int>(target.Length()));
 	});
 	
 	
-	engine.RegisterFn("tabresize", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("tabresize", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 2) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "tabresize expects 1 arguments");
@@ -259,7 +259,7 @@ void sme::library::InstallDefault(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("typeof", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("typeof", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "typeof expects 1 arguments");
@@ -271,7 +271,7 @@ void sme::library::InstallDefault(Engine& engine)
 	
 	// call(fid) или call(аргументы..., fid). Индекс функции — последний аргумент.
 	// Ошибка callIndex прерывает весь активный скриптовый вызов.
-	engine.RegisterFn("call", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("call", [](Engine& engine, Arguments args)
 	{
 		if (args.size() == 1 && args[0].IsInteger()) {
 			const int i = args[0].ToInteger();
@@ -291,7 +291,7 @@ void sme::library::InstallDefault(Engine& engine)
 				return Value::Null();
 			}
 			
-			const std::span<const Value> forwarded = args.first(args.size() - 1);
+			const Arguments forwarded = args.first(args.size() - 1);
 			auto result = engine.CallIndex(static_cast<size_t>(i), forwarded);
 			if (result.error) return Value::Null();
 			return std::move(static_cast<Value&>(result));

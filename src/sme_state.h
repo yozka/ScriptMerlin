@@ -139,6 +139,7 @@ struct State
 
 	
 	std::vector<Global> globals;
+    std::unordered_map<std::string, Value> constants;
     std::vector<Chunk> functions;
     std::vector<std::string> nativeNames;
     std::vector<NativeFn> natives;

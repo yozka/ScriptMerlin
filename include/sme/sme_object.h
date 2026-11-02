@@ -9,6 +9,7 @@ namespace sme
 {
 
 	class Engine;
+	using Arguments = std::span<const Value>;
 
 	// Объект приложения, который скрипт видит как значение со свойствами и методами:
 	// counter.value, obj.run(). Набор типов открытый, поэтому это интерфейс.
@@ -19,7 +20,7 @@ namespace sme
 		
 		virtual void SetProperty(Engine& engine, std::string_view name, const Value& value) = 0;
 		virtual Value GetProperty(Engine& engine, std::string_view name) const = 0;
-		virtual Value Call(Engine& engine, std::string_view name, std::span<const Value> args) = 0;
+		virtual Value Call(Engine& engine, std::string_view name, Arguments args) = 0;
 	};
 
 }

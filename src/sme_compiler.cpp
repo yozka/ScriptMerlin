@@ -102,7 +102,7 @@ private:
     // Присваивание в неизвестное имя молча заводит локал. Опечатка в левой
     // части поэтому не ошибка, а новая переменная. Глобал с таким именем не перекрывается.
     void Note(const std::string& name, int line) {
-        if (_locals.contains(name) || _env.globals.contains(name)) {
+        if (_locals.contains(name) || _env.globals.contains(name) || _env.constants.contains(name)) {
             return;
         }
         Declare(name, line);
@@ -132,7 +132,8 @@ private:
         if (stmt.kind == Stmt::Kind::Var) {
             Declare(stmt.name, stmt.line);
         }
-        if (stmt.kind == Stmt::Kind::For && !_locals.contains(stmt.name) && !_env.globals.contains(stmt.name)) {
+        if (stmt.kind == Stmt::Kind::For && !_locals.contains(stmt.name) &&
+            !_env.globals.contains(stmt.name) && !_env.constants.contains(stmt.name)) {
             Declare(stmt.name, stmt.line);
         }
         if (stmt.expr) CollectExpr(*stmt.expr);
@@ -257,7 +258,8 @@ private:
     // параметра слот null, код 0, поэтому if (!?x) x = значение по умолчанию работает.
     uint16_t CompileQuery(const Expr& expr) {
         uint16_t dest = AllocTemp();
-        if (!_locals.contains(expr.text) && !_env.globals.contains(expr.text)) {
+        if (!_locals.contains(expr.text) && !_env.globals.contains(expr.text) &&
+            !_env.constants.contains(expr.text)) {
             Emit(Op::LoadConst, dest, AddConst(int{0}), 0, 0, 0, expr.line);
             return dest;
         }
@@ -273,6 +275,18 @@ private:
     uint16_t CompileName(const Expr& expr) {
         if (auto it = _locals.find(expr.text); it != _locals.end()) {
             return it->second;
+        }
+        if (auto it = _env.constants.find(expr.text); it != _env.constants.end()) {
+            uint16_t dest = AllocTemp();
+            Constant constant;
+            const Value& value = it->second;
+            if (const auto* integer = std::get_if<int>(&value)) constant = *integer;
+            else if (const auto* real = std::get_if<float>(&value)) constant = *real;
+            else if (const auto* boolean = std::get_if<bool>(&value)) constant = *boolean;
+            else if (value.IsString()) constant = value.ToString();
+            else if (value.IsPointer()) constant = nullptr;
+            Emit(Op::LoadConst, dest, AddConst(std::move(constant)), 0, 0, 0, expr.line);
+            return dest;
         }
         if (auto it = _env.globals.find(expr.text); it != _env.globals.end()) {
             uint16_t dest = AllocTemp();
@@ -463,6 +477,11 @@ private:
         if (target.kind == Expr::Kind::Name) {
             if (auto it = _locals.find(target.text); it != _locals.end()) {
                 return Place{Place::Kind::Local, it->second, 0};
+            }
+            if (_env.constants.contains(target.text)) {
+                Report(error::Code::COMPILATION_INVALID_ASSIGNMENT_TARGET,
+                    "cannot assign to constant '" + target.text + "'", target.line);
+                return {};
             }
             if (auto it = _env.globals.find(target.text); it != _env.globals.end()) {
                 return Place{Place::Kind::Global, it->second, 0};
@@ -662,6 +681,11 @@ private:
             Emit(Op::MakeRefLocal, dest, it->second, 0, 0, 0, expr.line);
             return dest;
         }
+        if (_env.constants.contains(target.text)) {
+            Report(error::Code::COMPILATION_ADDRESS_EXPECTS_VARIABLE,
+                "constant '" + target.text + "' has no address", target.line);
+            return 0;
+        }
         if (auto it = _env.globals.find(target.text); it != _env.globals.end()) {
             Emit(Op::MakeRefGlobal, dest, it->second, 0, 0, 0, expr.line);
             return dest;
@@ -839,16 +863,28 @@ private:
     // Границы включительные, шаг всегда +1. Конец диапазона копируется в регистр
     // один раз: если справа локал, цикл не должен разъехаться, когда этот локал меняют внутри.
     void CompileFor(const Stmt& stmt) {
-        uint16_t index = _locals.contains(stmt.name) ? _locals.at(stmt.name) : _env.globals.at(stmt.name);
-        bool global = !_locals.contains(stmt.name);
+        const auto local = _locals.find(stmt.name);
+        const auto global = _env.globals.find(stmt.name);
+        if (local == _locals.end() && _env.constants.contains(stmt.name)) {
+            Report(error::Code::COMPILATION_INVALID_ASSIGNMENT_TARGET,
+                "cannot use constant '" + stmt.name + "' as a loop variable", stmt.line);
+            return;
+        }
+        if (local == _locals.end() && global == _env.globals.end()) {
+            Report(error::Code::COMPILATION_UNKNOWN_VARIABLE,
+                "unknown variable '" + stmt.name + "'", stmt.line);
+            return;
+        }
+        const uint16_t index = local != _locals.end() ? local->second : global->second;
+        const bool isGlobal = local == _locals.end();
         uint16_t start = CompileExpr(*stmt.expr);
-        if (global) Emit(Op::StoreGlobal, index, start, 0, 0, 0, stmt.line);
+        if (isGlobal) Emit(Op::StoreGlobal, index, start, 0, 0, 0, stmt.line);
         else Emit(Op::Move, index, start, 0, 0, 0, stmt.line);
         uint16_t endSource = CompileExpr(*stmt.expr2);
         uint16_t end = AllocTemp();
         Emit(Op::Move, end, endSource, 0, 0, 0, stmt.line);
         uint16_t one = 0;
-        if (global) {
+        if (isGlobal) {
             one = AllocTemp();
             Emit(Op::LoadConst, one, AddConst(int{1}), 0, 0, 0, stmt.line);
         }
@@ -856,7 +892,7 @@ private:
         _loops.push_back(Loop{});
         uint16_t condIp = Here();
         uint16_t current = index;
-        if (global) {
+        if (isGlobal) {
             current = AllocTemp();
             Emit(Op::LoadGlobal, current, index, 0, 0, 0, stmt.line);
         }
@@ -867,7 +903,7 @@ private:
         for (uint16_t jump : _loops.back().continues) {
             _code[jump].a = increment;
         }
-        if (global) {
+        if (isGlobal) {
             uint16_t loaded = AllocTemp();
             Emit(Op::LoadGlobal, loaded, index, 0, 0, 0, stmt.line);
             Emit(Op::Add, loaded, loaded, one, 0, 0, stmt.line);

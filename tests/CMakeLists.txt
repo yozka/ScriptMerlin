@@ -1,5 +1,5 @@
-add_executable(mln_tests test_engine.cpp)
-target_link_libraries(mln_tests PRIVATE ScriptMerlin GTest::gtest_main)
+add_executable(mln_tests test_main.cpp test_engine.cpp)
+target_link_libraries(mln_tests PRIVATE ScriptMerlin GTest::gtest)
 target_compile_definitions(mln_tests PRIVATE "MLN_TESTS_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\"")
 if(SME_ENABLE_ASSERTS STREQUAL "ON")
     target_compile_definitions(mln_tests PRIVATE SME_TEST_ASSERTS_ENABLED=1)

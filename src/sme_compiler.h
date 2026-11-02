@@ -16,6 +16,7 @@ namespace sme {
 struct CompileEnv {
     std::unordered_map<std::string, uint16_t> natives;
     std::unordered_map<std::string, uint16_t> globals;
+    std::unordered_map<std::string, Value> constants;
 };
 
 // Два прохода на функцию: сначала собрать локалы (включая неявные из присваиваний),

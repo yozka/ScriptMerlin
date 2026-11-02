@@ -21,7 +21,7 @@ namespace sme
 
 	// Функция, которую игра регистрирует и которую скрипт вызывает по имени.
 	// Аргументы — уже вычисленные значения. Возврат null допустим.
-	using NativeFn = std::function<Value(Engine& engine, std::span<const Value> args)>;
+	using NativeFn = std::function<Value(Engine& engine, Arguments args)>;
 
 	// Рантайм ScriptMerlin. Конвейер такой:
 	// исходник → препроцессор → лексер → парсер → компилятор → регистровая VM.
@@ -58,6 +58,11 @@ namespace sme
 		
 		// Глобал с этим именем начинает указывать на объект хоста.
 		void Bind(std::string name, std::shared_ptr<IScriptObject> object);
+		void SetGlobal(std::string name, Value value);
+		// Scalar constants are compiled into scripts; register them before Load / LoadSource.
+		void SetConstant(std::string name, Value value);
+		void RegisterInteger(std::string name, int value);
+		void RegisterString(std::string name, std::string value);
 		
 		
 	public:
@@ -66,7 +71,7 @@ namespace sme
 		std::optional<size_t> FindGlobal(std::string_view name) const;
 		// Вызов по индексу. Ошибки выполнения возвращаются в Result и останавливают
 		// всю активную цепочку вызовов.
-		error::Result<Value> CallIndex(size_t index, std::span<const Value> args);
+		error::Result<Value> CallIndex(size_t index, Arguments args);
 		
 		// Если value — ссылка, вернуть то, на что она указывает. Иначе само value.
 		// Протухшая ссылка читается как null, без исключения.
@@ -83,9 +88,9 @@ namespace sme
 		
 		// Недостающие аргументы приходят как null, лишние отбрасываются — как при
 		// вызове скрипт→скрипт. Result содержит значение или первую runtime-ошибку.
-		error::Result<Value> Call(std::string_view function, std::span<const Value> args = {});
+		error::Result<Value> Call(std::string_view function, Arguments args = {});
 		// Верхний кадр стоит сразу за stop. Вложенный call чужую паузу не снимает.
-		bool Stopped() const;
+		bool IsStopped() const;
 		error::Result<Value> Resume();
 		Value GlobalAt(size_t index) const;
 		
@@ -95,7 +100,7 @@ namespace sme
 		
 	private:
 		error::Error::Opt CompileUnit(const struct SourceUnit& unit, std::string_view name);
-		error::Result<Value> Invoke(size_t index, std::span<const Value> args);
+		error::Result<Value> Invoke(size_t index, Arguments args);
 		std::unique_ptr<State> _state;
 	};
 

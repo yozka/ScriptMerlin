@@ -14,7 +14,7 @@ public:
 
     // Новый RunState. Недостающие аргументы остаются null, лишние игнорируются.
     // Завершение/ошибка снимает только этот RunState; stop оставляет его на стеке.
-    error::Result<Value> Run(size_t function, std::span<const Value> args);
+    error::Result<Value> Run(size_t function, Arguments args);
     // Продолжить верхний RunState, который стоит на stop.
     error::Result<Value> Resume();
 

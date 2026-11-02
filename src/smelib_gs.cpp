@@ -36,7 +36,7 @@ namespace
 void sme::library::InstallGS(Engine& engine)
 {
 	
-	engine.RegisterFn("gs_sgn", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("gs_sgn", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "gs_sgn expects 1 argument");
@@ -49,7 +49,7 @@ void sme::library::InstallGS(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("gs_abs", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("gs_abs", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "gs_abs expects 1 argument");
@@ -66,7 +66,7 @@ void sme::library::InstallGS(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("gs_floor", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("gs_floor", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "gs_floor expects 1 argument");
@@ -76,7 +76,7 @@ void sme::library::InstallGS(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("gs_ceil", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("gs_ceil", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "gs_ceil expects 1 argument");
@@ -86,7 +86,7 @@ void sme::library::InstallGS(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("gs_round", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("gs_round", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "gs_round expects 1 argument");
@@ -96,7 +96,7 @@ void sme::library::InstallGS(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("gs_trunc", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("gs_trunc", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 2) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "gs_trunc expects 2 arguments");
@@ -108,7 +108,7 @@ void sme::library::InstallGS(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("gs_exp", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("gs_exp", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "gs_exp expects 1 argument");
@@ -118,7 +118,7 @@ void sme::library::InstallGS(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("gs_log", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("gs_log", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "gs_log expects 1 argument");
@@ -128,7 +128,7 @@ void sme::library::InstallGS(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("gs_pow", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("gs_pow", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 2) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "gs_pow expects 2 arguments");
@@ -138,7 +138,7 @@ void sme::library::InstallGS(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("gs_sqrt", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("gs_sqrt", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "gs_sqrt expects 1 argument");
@@ -153,7 +153,7 @@ void sme::library::InstallGS(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("gs_sin", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("gs_sin", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "gs_sin expects 1 argument");
@@ -163,7 +163,7 @@ void sme::library::InstallGS(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("gs_cos", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("gs_cos", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "gs_cos expects 1 argument");
@@ -173,7 +173,7 @@ void sme::library::InstallGS(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("gs_tan", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("gs_tan", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "gs_tan expects 1 argument");
@@ -183,7 +183,7 @@ void sme::library::InstallGS(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("gs_asin", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("gs_asin", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "gs_asin expects 1 argument");
@@ -193,7 +193,7 @@ void sme::library::InstallGS(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("gs_acos", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("gs_acos", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "gs_acos expects 1 argument");
@@ -203,7 +203,7 @@ void sme::library::InstallGS(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("gs_atan", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("gs_atan", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "gs_atan expects 1 argument");
@@ -213,7 +213,7 @@ void sme::library::InstallGS(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("gs_atan2", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("gs_atan2", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 2) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "gs_atan2 expects 1 argument");
@@ -223,7 +223,7 @@ void sme::library::InstallGS(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("gs_min", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("gs_min", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 2) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "gs_min expects 2 argument");
@@ -236,7 +236,7 @@ void sme::library::InstallGS(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("gs_max", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("gs_max", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 2) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "gs_max expects 2 argument");
@@ -249,7 +249,7 @@ void sme::library::InstallGS(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("gs_time", [](Engine&, std::span<const Value>)
+	engine.RegisterFn("gs_time", [](Engine&, Arguments)
 	{
 		const auto now = std::chrono::system_clock::now().time_since_epoch();
 		const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(now).count();
@@ -257,7 +257,7 @@ void sme::library::InstallGS(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("gs_random", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("gs_random", [](Engine& engine, Arguments args)
 	{
 		if (args.empty()) {
 			return Value::Integer(randomInt(0, std::numeric_limits<int>::max()));
@@ -273,10 +273,10 @@ void sme::library::InstallGS(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("gs_rand", [](Engine&, std::span<const Value>) { return Value::Integer(0); });
+	engine.RegisterFn("gs_rand", [](Engine&, Arguments) { return Value::Integer(0); });
 	
 	
-	engine.RegisterFn("gs_fid", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("gs_fid", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "gs_fid expects 1 argument");
@@ -288,7 +288,7 @@ void sme::library::InstallGS(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("gs_gid", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("gs_gid", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "gs_gid expects 1 argument");

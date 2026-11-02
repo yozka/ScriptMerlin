@@ -11,9 +11,8 @@
 namespace sme
 {
 
-	// Значение #def, которое видит хост через globalAt.
-	// В сам текст скрипта подставляется исходная строка макроса, и лексер
-	// читает её тем же разбором, которым получено это значение.
+	// Значение #def для compile-time подстановки. В исходный текст попадает
+	// макрос, а пустое #def остаётся null-константой.
 	struct Literal
 	{
 		std::string name;
@@ -27,7 +26,6 @@ namespace sme
 	struct SourceUnit
 	{
 		std::string source;
-		std::vector<std::string> globals; // имена из пустого #def, значение null
 		std::vector<Literal> literals;
 	};
 

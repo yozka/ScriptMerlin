@@ -14,7 +14,7 @@
 
 void sme::library::InstallMath(Engine& engine)
 {
-	engine.RegisterFn("abs", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("abs", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "abs expects 1 argument");
@@ -31,7 +31,7 @@ void sme::library::InstallMath(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("floor", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("floor", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "floor expects 1 argument");
@@ -41,7 +41,7 @@ void sme::library::InstallMath(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("ceil", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("ceil", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "ceil expects 1 argument");
@@ -51,7 +51,7 @@ void sme::library::InstallMath(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("round", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("round", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "round expects 1 argument");
@@ -61,7 +61,7 @@ void sme::library::InstallMath(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("sqrt", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("sqrt", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "sqrt expects 1 argument");
@@ -76,7 +76,7 @@ void sme::library::InstallMath(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("sin", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("sin", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "sin expects 1 argument");
@@ -86,7 +86,7 @@ void sme::library::InstallMath(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("cos", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("cos", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 1) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "cos expects 1 argument");
@@ -96,7 +96,7 @@ void sme::library::InstallMath(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("pow", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("pow", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 2) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "pow expects 2 argument");
@@ -106,7 +106,7 @@ void sme::library::InstallMath(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("min", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("min", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 2) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "min expects 2 argument");
@@ -119,7 +119,7 @@ void sme::library::InstallMath(Engine& engine)
 	});
 	
 	
-	engine.RegisterFn("max", [](Engine& engine, std::span<const Value> args)
+	engine.RegisterFn("max", [](Engine& engine, Arguments args)
 	{
 		if (args.size() != 2) {
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "max expects 2 argument");

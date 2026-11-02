@@ -55,7 +55,7 @@ TEST(ErrorResult, Value) {
 
 TEST(RuntimeError, CallbackErrorReturnsLocationAndStack) {
     sme::Engine engine;
-    engine.RegisterFn("fail", [](sme::Engine& callbackEngine, std::span<const sme::Value>) {
+    engine.RegisterFn("fail", [](sme::Engine& callbackEngine, sme::Arguments) {
         callbackEngine.RuntimeError(sme::error::Code::VM_EXECUTION_FAILURE, "callback failed");
         return sme::Value::Integer(99);
     });
@@ -84,11 +84,11 @@ TEST(RuntimeError, FirstErrorWinsUntilControlCheckpoint) {
 TEST(RuntimeError, IgnoredNestedCallErrorStopsOuterScript) {
     sme::Engine engine;
     bool continued = false;
-    engine.RegisterFn("nested", [](sme::Engine& callbackEngine, std::span<const sme::Value>) {
+    engine.RegisterFn("nested", [](sme::Engine& callbackEngine, sme::Arguments) {
         (void)callbackEngine.Call("inner");
         return sme::Value::Null();
     });
-    engine.RegisterFn("continued", [&continued](sme::Engine&, std::span<const sme::Value>) {
+    engine.RegisterFn("continued", [&continued](sme::Engine&, sme::Arguments) {
         continued = true;
         return sme::Value::Null();
     });
@@ -115,6 +115,46 @@ TEST(RuntimeError, ResizeTableUsesRuntimeError) {
     auto result = engine.Call("main");
     ASSERT_TRUE(result.error);
     EXPECT_EQ(result.error->Code(), sme::error::Code::ENGINE_TABRESIZE_EXPECTS_TABLE);
+}
+
+TEST(Engine, HostConstantsAreReadOnlyAndSetGlobalStaysMutable) {
+    sme::Engine engine;
+    engine.SetFileSystem(sme::MakeStdFileSystem());
+    engine.SetGlobal("counter", sme::Value::Integer(3));
+    engine.RegisterInteger("APP_VERSION", 7);
+    engine.RegisterString("APP_NAME", "Ecovale");
+    ASSERT_FALSE(engine.LoadSource(R"(
+        func main() {
+            counter += 2;
+            return counter + APP_VERSION;
+        }
+        func appName() { return APP_NAME; }
+    )"));
+
+    auto result = engine.Call("main");
+    ASSERT_FALSE(result.error);
+    EXPECT_EQ(result.ToInteger(), 12);
+    engine.SetGlobal("counter", sme::Value::Integer(10));
+    result = engine.Call("main");
+    ASSERT_FALSE(result.error);
+    EXPECT_EQ(result.ToInteger(), 19);
+
+    auto appName = engine.Call("appName");
+    ASSERT_FALSE(appName.error);
+    EXPECT_EQ(appName.CastString(), "Ecovale");
+    EXPECT_FALSE(engine.FindGlobal("APP_VERSION"));
+    EXPECT_FALSE(engine.FindGlobal("APP_NAME"));
+}
+
+TEST(Engine, HostConstantsCannotBeAssigned) {
+    sme::Engine engine;
+    engine.SetFileSystem(sme::MakeStdFileSystem());
+    engine.RegisterInteger("MAX_COUNT", 10);
+
+    auto error = engine.LoadSource("func main() { MAX_COUNT = 11; }");
+    ASSERT_TRUE(error);
+    EXPECT_EQ(error->Code(), sme::error::Code::COMPILATION_INVALID_ASSIGNMENT_TARGET);
+    EXPECT_NE(error->Message().find("cannot assign to constant"), std::string::npos);
 }
 
 std::string scriptPath(const char* relative) {
@@ -207,7 +247,7 @@ public:
             "unknown property '" + std::string(name) + "'");
     }
 
-    sme::Value Call(sme::Engine& engine, std::string_view name, std::span<const sme::Value> args) override {
+    sme::Value Call(sme::Engine& engine, std::string_view name, sme::Arguments args) override {
         if (name == "run") {
             _testOut = _testStr + std::to_string(_testInt);
             return sme::Value::Null();
@@ -1609,6 +1649,8 @@ TEST(Language, Defines)
 {
     Result script = run("ver2/test_language.gs", "test_Defines");
     EXPECT_EQ(script.Text(), "-1,42,90,1,ko,2,0,0,6,3,1");
+    EXPECT_FALSE(script.engine->FindGlobal("LANG_EMPTY"));
+    EXPECT_FALSE(script.engine->FindGlobal("LANG_NEG"));
 }
 
 TEST(Language, DefineFloat)
@@ -1799,7 +1841,8 @@ TEST(Language, Abort)
 	sme::library::InstallGS(engine);
     engine.Load(scriptPath("ver2/test_language_abort.gs"));
     EXPECT_EQ(engine.FindFunction("abort_should_not_compile"), std::nullopt);
-    EXPECT_EQ(globalInt(engine, "ABORT_SEEN"), 1);
+	EXPECT_FALSE(engine.FindGlobal("ABORT_SEEN"));
+	EXPECT_EQ(callValue(engine, "abort_seen_value").ToInteger(), 1);
 }
 
 TEST(Language, Stop)
@@ -1812,12 +1855,12 @@ TEST(Language, Stop)
     engine.Load(scriptPath("ver2/test_language.gs"));
     auto stoppedResult = engine.Call("test_Stop");
     ASSERT_FALSE(stoppedResult.error);
-    EXPECT_TRUE(engine.Stopped());
+    EXPECT_TRUE(engine.IsStopped());
     EXPECT_EQ(globalInt(engine, "lang_stop_mark"), 17);
     auto resumed = engine.Resume();
     ASSERT_FALSE(resumed.error);
     sme::Value value = std::move(resumed);
-    EXPECT_FALSE(engine.Stopped());
+    EXPECT_FALSE(engine.IsStopped());
     EXPECT_EQ(globalInt(engine, "lang_stop_mark"), 99);
     ASSERT_TRUE(value.IsInteger());
     EXPECT_EQ(std::get<int>(value), 0);
