@@ -64,13 +64,13 @@ func main() {
 }
 )mln");
     if (error) {
-        std::cerr << error->message() << '\n';
+        std::cerr << error->Message() << '\n';
         return 1;
     }
 
-    auto callResult = engine.call("main");
+    auto callResult = engine.Call("main");
     if (callResult.error) {
-        std::cerr << callResult.error->message() << '\n';
+        std::cerr << callResult.error->Message() << '\n';
         return 1;
     }
     const sme::Value& result = callResult;

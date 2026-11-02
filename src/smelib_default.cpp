@@ -241,7 +241,7 @@ void sme::library::InstallDefault(Engine& engine)
 			engine.RuntimeError(error::Code::FUNCTION_ARGUMENTS, "tabsize expects 1 arguments");
 			return Value::Null();
 		}
-		Value target = engine.follow(args[0]);
+		Value target = engine.Follow(args[0]);
 		if (!target.IsTable()) return Value::Integer(0);
 		return Value::Integer(static_cast<int>(target.Length()));
 	});
@@ -280,7 +280,7 @@ void sme::library::InstallDefault(Engine& engine)
 				return Value::Null();
 			}
 			
-			auto result = engine.callIndex(static_cast<size_t>(i), {});
+			auto result = engine.CallIndex(static_cast<size_t>(i), {});
 			if (result.error) return Value::Null();
 			return std::move(static_cast<Value&>(result));
 		}
@@ -292,7 +292,7 @@ void sme::library::InstallDefault(Engine& engine)
 			}
 			
 			const std::span<const Value> forwarded = args.first(args.size() - 1);
-			auto result = engine.callIndex(static_cast<size_t>(i), forwarded);
+			auto result = engine.CallIndex(static_cast<size_t>(i), forwarded);
 			if (result.error) return Value::Null();
 			return std::move(static_cast<Value&>(result));
 		}

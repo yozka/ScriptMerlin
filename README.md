@@ -72,16 +72,16 @@ int main()
         }
     )");
     if (error) {
-        std::cerr << error->message() << '\n';
+        std::cerr << error->Message() << '\n';
         return 1;
     }
 
-    auto result = engine.call("main");
+    auto result = engine.Call("main");
     if (result.error) {
-        std::cerr << result.error->message() << '\n';
+        std::cerr << result.error->Message() << '\n';
         return 1;
     }
-    std::cout << result.value().ToString() << '\n';
+    std::cout << result.Value().ToString() << '\n';
 }
 ```
 
@@ -136,7 +136,7 @@ cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/install
 - `Engine::useFileSystem` позволяет задать файловую систему, используемую для загрузки скриптов и `#include`.
 - `Engine::useLog` подключает логгер для вывода и сообщений движка.
 - `Engine::LoadSource` загружает исходный код из строки, а `Engine::Load` — из файла.
-- `Engine::call` вызывает функцию скрипта по имени.
+- `Engine::Call` вызывает функцию скрипта по имени.
 
 Строки хранятся непосредственно в `Value`; при взятии ссылки строковый слот
 переводится на `std::shared_ptr<std::string>`. Таблицы хранятся как разделяемый
@@ -149,7 +149,7 @@ cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/install
 
 Чтобы shared ownership оставался ограниченным временем жизни внешних значений,
 циклическое владение таблицами запрещено и завершается runtime-ошибкой.
-`Engine::call`, `callIndex` и `resume` возвращают `sme::error::Result<sme::Value>`;
+`Engine::Call`, `CallIndex` и `Resume` возвращают `sme::error::Result<sme::Value>`;
 первая runtime-ошибка останавливает текущую цепочку выполнения и содержит
 диагностику с местом возникновения и стеком скрипта. В callback-ах сообщайте
 об ошибке через `Engine::RuntimeError(code, message)`, затем возвращайте

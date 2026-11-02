@@ -5,7 +5,8 @@
 namespace sme::error
 {
 
-	Error::Error(Code code, std::string message, Location location, std::vector<StackFrame> stack)
+	Error::Error(::sme::error::Code code, std::string message, ::sme::error::Location location,
+		std::vector<StackFrame> stack)
 	:
 		_code(code),
 		_message(std::move(message)),
@@ -15,25 +16,25 @@ namespace sme::error
 	}
 
 
-	Code Error::code() const noexcept
+	::sme::error::Code Error::Code() const noexcept
 	{
 		return _code;
 	}
 
 
-	const std::string& Error::message() const noexcept
+	const std::string& Error::Message() const noexcept
 	{
 		return _message;
 	}
 
 
-	const Location& Error::location() const noexcept
+	const ::sme::error::Location& Error::Location() const noexcept
 	{
 		return _location;
 	}
 
 
-	const std::vector<StackFrame>& Error::stack() const noexcept
+	const std::vector<StackFrame>& Error::Stack() const noexcept
 	{
 		return _stack;
 	}

@@ -171,19 +171,19 @@ namespace sme
 			_defines.emplace("TYPE_TAB", "4");
 		}
 		
-		error::Result<SourceUnit> run(const std::string& file) {
-			process(file);
-			return finish();
+		error::Result<SourceUnit> Run(const std::string& file) {
+			Process(file);
+			return Finish();
 		}
 		
-		error::Result<SourceUnit> runText(std::string_view source, std::string_view name) {
+		error::Result<SourceUnit> RunText(std::string_view source, std::string_view name) {
 			auto comments = stripComments(source, name);
 			if (comments.error) {
 				_error = std::move(comments.error);
-				return finish();
+				return Finish();
 			}
-			expandStream(comments, std::string(name));
-			return finish();
+			ExpandStream(comments, std::string(name));
+			return Finish();
 		}
 		
 	private:
@@ -199,11 +199,11 @@ namespace sme
 		bool _abort = false;
 		std::string _out;
 		
-		error::Result<SourceUnit> finish() const {
+		error::Result<SourceUnit> Finish() const {
 			return {SourceUnit{_out, _globals, _literals}, _error};
 		}
 
-		void addError(error::Code code, std::string message, const std::string& source, int line = 0) {
+		void AddError(error::Code code, std::string message, const std::string& source, int line = 0) {
 			if (_error) return;
 			error::Location location;
 			location.source = source;
@@ -211,17 +211,17 @@ namespace sme
 			_error.emplace(code, std::move(message), std::move(location));
 		}
 		
-		bool defined(const std::string& name) const {
+		bool Defined(const std::string& name) const {
 			return _defines.contains(name) || _globalNames.contains(name);
 		}
 		
-		void addGlobal(const std::string& name) {
+		void AddGlobal(const std::string& name) {
 			if (_globalNames.insert(name).second) {
 				_globals.push_back(name);
 			}
 		}
 		
-		std::optional<std::string> resolve(const std::string& current, const std::string& spec) const {
+		std::optional<std::string> Resolve(const std::string& current, const std::string& spec) const {
 			if (!_files) return std::nullopt;
 			const std::string candidates[] = {
 				JoinPath(ParentPath(current), spec),
@@ -235,7 +235,7 @@ namespace sme
 			return std::nullopt;
 		}
 		
-		void process(const std::string& file) {
+		void Process(const std::string& file) {
 			if (!_included.insert(NormalizePath(file)).second) {
 				return;
 			}
@@ -253,12 +253,12 @@ namespace sme
 				_current = previous;
 				return;
 			}
-			expandStream(comments, file);
+			ExpandStream(comments, file);
 			_current = previous;
 		}
 		
 		// lineBase нужен, чтобы строка из #ifdef не начинала нумерацию заново с 1.
-		void expandStream(const std::string& text, const std::string& name, int lineBase = 0) {
+		void ExpandStream(const std::string& text, const std::string& name, int lineBase = 0) {
 			std::stringstream stream(text);
 			std::string line;
 			int lineNo = lineBase;
@@ -273,19 +273,19 @@ namespace sme
 				}
 				if (startsWithWord(trimmed, "#include")) {
 					if (_current.empty()) {
-						addError(error::Code::PREPROCESSING_INCLUDE_NOT_AVAILABLE,
+						AddError(error::Code::PREPROCESSING_INCLUDE_NOT_AVAILABLE,
 							"include is not available in " + name, name, lineNo);
 						continue;
 					}
-					includeLine(_current, trimmed, lineNo);
+					IncludeLine(_current, trimmed, lineNo);
 					continue;
 				}
 				if (startsWithWord(trimmed, "#def")) {
-					defineLine(trimmed, name, lineNo);
+					DefineLine(trimmed, name, lineNo);
 					continue;
 				}
 				if (startsWithWord(trimmed, "#ifdef") || startsWithWord(trimmed, "#ifndef")) {
-					conditionalLine(stream, trimmed, name, lineNo);
+					ConditionalLine(stream, trimmed, name, lineNo);
 					if (_abort) break;
 					continue;
 				}
@@ -294,48 +294,48 @@ namespace sme
 					break;
 				}
 				if (!trimmed.empty() && trimmed[0] == '#') {
-					addError(error::Code::PREPROCESSING_UNKNOWN_DIRECTIVE,
+					AddError(error::Code::PREPROCESSING_UNKNOWN_DIRECTIVE,
 						"unknown directive in " + name, name, lineNo);
 					continue;
 				}
-				auto expanded = expand(line, 0, name, lineNo);
+				auto expanded = Expand(line, 0, name, lineNo);
 				if (!expanded) continue;
 				_out += *expanded;
 				_out.push_back('\n');
 			}
 		}
 		
-		void includeLine(const std::string& current, const std::string& line, int lineNo) {
+		void IncludeLine(const std::string& current, const std::string& line, int lineNo) {
 			std::string rest = trim(line.substr(8));
 			if (rest.size() < 2 || rest.front() != '"') {
-				addError(error::Code::PREPROCESSING_INCLUDE_PATH_NOT_QUOTED,
+				AddError(error::Code::PREPROCESSING_INCLUDE_PATH_NOT_QUOTED,
 					"include expects a quoted path", current, lineNo);
 				return;
 			}
 			size_t end = rest.find('"', 1);
 			if (end == std::string::npos) {
-				addError(error::Code::PREPROCESSING_UNTERMINATED_INCLUDE_PATH,
+				AddError(error::Code::PREPROCESSING_UNTERMINATED_INCLUDE_PATH,
 					"unterminated include path", current, lineNo);
 				return;
 			}
 			if (!_files) {
-				addError(error::Code::PREPROCESSING_FILE_SYSTEM_EMPTY,
+				AddError(error::Code::PREPROCESSING_FILE_SYSTEM_EMPTY,
 					"file system is empty", current, lineNo);
 				return;
 			}
-			auto path = resolve(current, rest.substr(1, end - 1));
+			auto path = Resolve(current, rest.substr(1, end - 1));
 			if (!path) {
-				addError(error::Code::PREPROCESSING_INCLUDE_NOT_FOUND,
+				AddError(error::Code::PREPROCESSING_INCLUDE_NOT_FOUND,
 					"cannot include '" + rest.substr(1, end - 1) + "' from " + current, current, lineNo);
 				return;
 			}
-			process(*path);
+			Process(*path);
 		}
 		
-		void defineLine(const std::string& line, const std::string& name, int lineNo) {
+		void DefineLine(const std::string& line, const std::string& name, int lineNo) {
 			std::string rest = trim(line.substr(4));
 			if (rest.empty() || !isIdentStart(static_cast<unsigned char>(rest[0]))) {
-				addError(error::Code::PREPROCESSING_DEFINE_NAME_MISSING,
+				AddError(error::Code::PREPROCESSING_DEFINE_NAME_MISSING,
 					"define expects a name in " + name, name, lineNo);
 				return;
 			}
@@ -350,23 +350,23 @@ namespace sme
 				_literals.erase(std::remove_if(_literals.begin(), _literals.end(), [&](const Literal& item) {
 					return item.name == ident;
 				}), _literals.end());
-				addGlobal(ident);
+				AddGlobal(ident);
 				return;
 			}
 			_defines[ident] = value;
-			rememberLiteral(ident, value, name, lineNo);
+			RememberLiteral(ident, value, name, lineNo);
 		}
 		
 		// Один литерал — и в глобал, и то, что потом увидит лексер в подстановке.
 		// Выражение вроде 1+2 литералом не является: глобал остаётся null,
 		// а в текст скрипта по-прежнему вставляется исходная строка.
-		void rememberLiteral(const std::string& name, const std::string& value, const std::string& file, int lineNo) {
+		void RememberLiteral(const std::string& name, const std::string& value, const std::string& file, int lineNo) {
 			auto lexed = lex(value, file);
 			if (lexed.error) {
-				error::Location location = lexed.error->location();
+				error::Location location = lexed.error->Location();
 				location.line = lineNo;
-				_error.emplace(lexed.error->code(),
-					"invalid define '" + name + "': " + lexed.error->message(), std::move(location));
+				_error.emplace(lexed.error->Code(),
+					"invalid define '" + name + "': " + lexed.error->Message(), std::move(location));
 				return;
 			}
 			const std::vector<Token>& tokens = lexed;
@@ -384,7 +384,7 @@ namespace sme
 			if (single) {
 				const Token& token = tokens[index];
 				if (negative && token.kind != Token::Kind::Int && token.kind != Token::Kind::Float) {
-					addError(error::Code::PREPROCESSING_INVALID_DEFINE,
+					AddError(error::Code::PREPROCESSING_INVALID_DEFINE,
 						"invalid define '" + name + "' in " + file, file, lineNo);
 					return;
 				}
@@ -393,14 +393,14 @@ namespace sme
 						literal.kind = Literal::Kind::Int;
 						if (token.text == "2147483648") {
 							if (!negative) {
-								addError(error::Code::PREPROCESSING_INTEGER_OUT_OF_RANGE,
+								AddError(error::Code::PREPROCESSING_INTEGER_OUT_OF_RANGE,
 									"integer literal out of range in " + file, file, lineNo);
 								return;
 							}
 							literal.integer = std::numeric_limits<int>::min();
 						} else if (negative) {
 							if (token.intValue == std::numeric_limits<int>::min()) {
-								addError(error::Code::PREPROCESSING_INTEGER_OUT_OF_RANGE,
+								AddError(error::Code::PREPROCESSING_INTEGER_OUT_OF_RANGE,
 									"integer literal out of range in " + file, file, lineNo);
 								return;
 							}
@@ -446,11 +446,11 @@ namespace sme
 		
 		// Следующая непустая строка — вся ветка. Вложенный #ifdef на этой строке
 		// читается тем же expandStream, с номером строки исходного файла.
-		void conditionalLine(std::stringstream& stream, const std::string& line, const std::string& name, int& lineNo) {
+		void ConditionalLine(std::stringstream& stream, const std::string& line, const std::string& name, int& lineNo) {
 			const bool negate = startsWithWord(line, "#ifndef");
 			const size_t skip = negate ? 7 : 6;
 			std::string ident = trim(line.substr(skip));
-			const bool take = negate ? !defined(ident) : defined(ident);
+			const bool take = negate ? !Defined(ident) : Defined(ident);
 			std::string next;
 			while (std::getline(stream, next)) {
 				++lineNo;
@@ -459,13 +459,13 @@ namespace sme
 			}
 			if (!stream && next.empty()) return;
 			if (take) {
-				expandStream(next, name, lineNo - 1);
+				ExpandStream(next, name, lineNo - 1);
 			} else {
-				skipDirective(stream, next, lineNo);
+				SkipDirective(stream, next, lineNo);
 			}
 		}
 		
-		void skipDirective(std::stringstream& stream, const std::string& line, int& lineNo) {
+		void SkipDirective(std::stringstream& stream, const std::string& line, int& lineNo) {
 			std::string trimmed = trim(line);
 			if (!startsWithWord(trimmed, "#ifdef") && !startsWithWord(trimmed, "#ifndef")) {
 				return;
@@ -477,15 +477,15 @@ namespace sme
 				if (!trim(next).empty()) break;
 			}
 			if (!next.empty()) {
-				skipDirective(stream, next, lineNo);
+				SkipDirective(stream, next, lineNo);
 			}
 		}
 		
 		// Глубина больше 32 — ошибка. Раньше хвост вроде #def A A молча оставался нераскрытым.
-		std::optional<std::string> expand(std::string_view text, int depth,
+		std::optional<std::string> Expand(std::string_view text, int depth,
 			const std::string& name, int lineNo) {
 			if (depth > 32) {
-				addError(error::Code::PREPROCESSING_MACRO_EXPANSION_LIMIT,
+				AddError(error::Code::PREPROCESSING_MACRO_EXPANSION_LIMIT,
 					"macro expanded too many times", name, lineNo);
 				return std::nullopt;
 			}
@@ -521,7 +521,7 @@ namespace sme
 					std::string ident(text.substr(begin, i - begin));
 					auto it = _defines.find(ident);
 					if (it != _defines.end() && !it->second.empty()) {
-						auto expanded = expand(it->second, depth + 1, name, lineNo);
+						auto expanded = Expand(it->second, depth + 1, name, lineNo);
 						if (!expanded) return std::nullopt;
 						out += *expanded;
 					} else {
@@ -541,13 +541,13 @@ namespace sme
 	error::Result<SourceUnit> PreprocessFile(const files::IFileSystem::Ptr& files, const std::string& path)
 	{
 		SME_ASSERT(files, "file system is empty");
-		return Preprocessor(files, ParentPath(path)).run(path);
+		return Preprocessor(files, ParentPath(path)).Run(path);
 	}
 
 	error::Result<SourceUnit> PreprocessSource(const files::IFileSystem::Ptr& files, std::string_view source, std::string_view name, const std::string& includeRoot)
 	{
 		SME_ASSERT(files, "file system is empty");
-		return Preprocessor(files, includeRoot).runText(source, name);
+		return Preprocessor(files, includeRoot).RunText(source, name);
 	}
 
 }

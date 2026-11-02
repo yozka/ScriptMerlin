@@ -14,24 +14,24 @@ public:
 
     // Новый RunState. Недостающие аргументы остаются null, лишние игнорируются.
     // Завершение/ошибка снимает только этот RunState; stop оставляет его на стеке.
-    error::Result<Value> run(size_t function, std::span<const Value> args);
+    error::Result<Value> Run(size_t function, std::span<const Value> args);
     // Продолжить верхний RunState, который стоит на stop.
-    error::Result<Value> resume();
+    error::Result<Value> Resume();
 
 private:
     // nullopt значит «встали на stop», значение — нормальный return наружу.
-    error::Result<std::optional<Value>> execute();
-    int checkedIntAdd(int x, int y);
-    int checkedIntSub(int x, int y);
-    int checkedIntMul(int x, int y);
-    Value intBinary(Op op, int x, int y);
-    int narrowInt(double number);
-    Value* referenced(const Value& value);
-    Value materialize(const Chunk& chunk, size_t constant);
-    Value binary(Op op, const Value& lhs, const Value& rhs);
-    Value unary(Op op, const Value& value);
-    bool equals(const Value& lhs, const Value& rhs);
-    int compare(const Value& lhs, const Value& rhs);
+    error::Result<std::optional<Value>> Execute();
+    int CheckedIntAdd(int x, int y);
+    int CheckedIntSub(int x, int y);
+    int CheckedIntMul(int x, int y);
+    Value IntBinary(Op op, int x, int y);
+    int NarrowInt(double number);
+    Value* Referenced(const Value& value);
+    Value Materialize(const Chunk& chunk, size_t constant);
+    Value Binary(Op op, const Value& lhs, const Value& rhs);
+    Value Unary(Op op, const Value& value);
+    bool Equals(const Value& lhs, const Value& rhs);
+    int Compare(const Value& lhs, const Value& rhs);
 
     Engine& _engine;
     State& _state;

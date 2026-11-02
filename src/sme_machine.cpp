@@ -27,7 +27,7 @@ inline Value& fastReg(Frame& frame, size_t index) {
 
 Machine::Machine(Engine& engine, State& state) : _engine(engine), _state(state) {}
 
-int Machine::checkedIntAdd(int x, int y) {
+int Machine::CheckedIntAdd(int x, int y) {
     if ((y > 0 && x > std::numeric_limits<int>::max() - y) ||
         (y < 0 && x < std::numeric_limits<int>::min() - y)) {
         _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow");
@@ -36,7 +36,7 @@ int Machine::checkedIntAdd(int x, int y) {
     return x + y;
 }
 
-int Machine::checkedIntSub(int x, int y) {
+int Machine::CheckedIntSub(int x, int y) {
     if ((y < 0 && x > std::numeric_limits<int>::max() + y) ||
         (y > 0 && x < std::numeric_limits<int>::min() + y)) {
         _state.RecordRuntimeError(error::Code::VM_INTEGER_OVERFLOW, "integer overflow");
@@ -45,7 +45,7 @@ int Machine::checkedIntSub(int x, int y) {
     return x - y;
 }
 
-int Machine::checkedIntMul(int x, int y) {
+int Machine::CheckedIntMul(int x, int y) {
     if (x == 0 || y == 0) return 0;
     if ((x == -1 && y == std::numeric_limits<int>::min()) ||
         (y == -1 && x == std::numeric_limits<int>::min())) {
@@ -62,11 +62,11 @@ int Machine::checkedIntMul(int x, int y) {
     return x * y;
 }
 
-Value Machine::intBinary(Op op, int x, int y) {
+Value Machine::IntBinary(Op op, int x, int y) {
     switch (op) {
-    case Op::Add: return Value::Integer(checkedIntAdd(x, y));
-    case Op::Sub: return Value::Integer(checkedIntSub(x, y));
-    case Op::Mul: return Value::Integer(checkedIntMul(x, y));
+    case Op::Add: return Value::Integer(CheckedIntAdd(x, y));
+    case Op::Sub: return Value::Integer(CheckedIntSub(x, y));
+    case Op::Mul: return Value::Integer(CheckedIntMul(x, y));
     case Op::Div:
         if (y == 0) {
             _state.RecordRuntimeError(error::Code::VM_DIVISION_BY_ZERO, "division by zero");
@@ -112,7 +112,7 @@ Value Machine::intBinary(Op op, int x, int y) {
     }
 }
 
-int Machine::narrowInt(double number) {
+int Machine::NarrowInt(double number) {
     if (!std::isfinite(number) ||
         number < static_cast<double>(std::numeric_limits<int>::min()) ||
         number >= static_cast<double>(std::numeric_limits<int>::max()) + 1.0) {
@@ -122,7 +122,7 @@ int Machine::narrowInt(double number) {
     return static_cast<int>(number);
 }
 
-Value Machine::materialize(const Chunk& chunk, size_t constant) {
+Value Machine::Materialize(const Chunk& chunk, size_t constant) {
     if (constant >= chunk.constants.size()) {
         _state.RecordRuntimeError(error::Code::VM_INTERNAL_CONSTANT_FAULT, "internal constant fault");
         return Value::Null();
@@ -138,7 +138,7 @@ Value Machine::materialize(const Chunk& chunk, size_t constant) {
     return Value::Null();
 }
 
-bool Machine::equals(const Value& lhs, const Value& rhs) {
+bool Machine::Equals(const Value& lhs, const Value& rhs) {
     if (auto left = lhs.AsNumber()) {
         if (auto right = rhs.AsNumber()) {
             return *left == *right;
@@ -193,7 +193,7 @@ bool Machine::equals(const Value& lhs, const Value& rhs) {
 
 // NaN ни меньше, ни больше, ни равен. == идёт через equals и для NaN уже ложен;
 // <= и >= без этой проверки считали бы «не меньше и не больше» равенством.
-int Machine::compare(const Value& lhs, const Value& rhs) {
+int Machine::Compare(const Value& lhs, const Value& rhs) {
     auto left = lhs.AsNumber();
     auto right = rhs.AsNumber();
     if (!left || !right) {
@@ -205,9 +205,9 @@ int Machine::compare(const Value& lhs, const Value& rhs) {
     return 0;
 }
 
-Value Machine::unary(Op op, const Value& value) {
+Value Machine::Unary(Op op, const Value& value) {
     if (op == Op::Not) {
-        return Value::Integer(_state.truthy(value) ? 0 : 1);
+        return Value::Integer(_state.Truthy(value) ? 0 : 1);
     }
     if (op == Op::Neg) {
         if (const auto* integer = std::get_if<int>(&value)) {
@@ -230,13 +230,13 @@ Value Machine::unary(Op op, const Value& value) {
     return Value::Null();
 }
 
-Value Machine::binary(Op op, const Value& lhs, const Value& rhs) {
+Value Machine::Binary(Op op, const Value& lhs, const Value& rhs) {
     if (lhs.index() == VT_INT && rhs.index() == VT_INT) {
-        return intBinary(op, std::get<int>(lhs), std::get<int>(rhs));
+        return IntBinary(op, std::get<int>(lhs), std::get<int>(rhs));
     }
     if (op == Op::LogicAnd || op == Op::LogicOr) {
-        bool left = _state.truthy(lhs);
-        bool right = _state.truthy(rhs);
+        bool left = _state.Truthy(lhs);
+        bool right = _state.Truthy(rhs);
         bool result = op == Op::LogicAnd ? (left && right) : (left || right);
         return Value::Integer(result ? 1 : 0);
     }
@@ -262,8 +262,8 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs) {
             return Value::String(std::move(result));
         }
     }
-    if (op == Op::CmpEq) return Value::Integer(equals(lhs, rhs) ? 1 : 0);
-    if (op == Op::CmpNe) return Value::Integer(equals(lhs, rhs) ? 0 : 1);
+    if (op == Op::CmpEq) return Value::Integer(Equals(lhs, rhs) ? 1 : 0);
+    if (op == Op::CmpNe) return Value::Integer(Equals(lhs, rhs) ? 0 : 1);
     if (op == Op::CmpLt || op == Op::CmpLe || op == Op::CmpGt || op == Op::CmpGe) {
         auto left = lhs.AsNumber();
         auto right = rhs.AsNumber();
@@ -274,7 +274,7 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs) {
         if (std::isnan(*left) || std::isnan(*right)) {
             return Value::Integer(0);
         }
-        int order = compare(lhs, rhs);
+        int order = Compare(lhs, rhs);
         bool result = false;
         switch (op) {
         case Op::CmpLt: result = order < 0; break;
@@ -397,7 +397,7 @@ Value Machine::binary(Op op, const Value& lhs, const Value& rhs) {
     return Value::Null();
 }
 
-error::Result<Value> Machine::run(size_t function, std::span<const Value> args) {
+error::Result<Value> Machine::Run(size_t function, std::span<const Value> args) {
     if (_state.hasRuntimeError) {
         return {Value::Null(), _state.GetRuntimeError()};
     }
@@ -411,7 +411,7 @@ error::Result<Value> Machine::run(size_t function, std::span<const Value> args) 
 
     Frame frame;
     frame.function = function;
-    frame.generation = _state.freshFrameId();
+    frame.generation = _state.FreshFrameId();
     frame.regs.resize(chunk.registerCount);
     const size_t supplied = std::min(args.size(), static_cast<size_t>(chunk.parameterCount));
     frame.supplied = static_cast<uint16_t>(supplied);
@@ -430,20 +430,20 @@ error::Result<Value> Machine::run(size_t function, std::span<const Value> args) 
                 state.runStack.pop_back();
             }
         }
-        void keep() { active = false; }
+        void Keep() { active = false; }
     } guard{_state};
-    auto result = execute();
+    auto result = Execute();
     if (result.error) {
         return {Value::Null(), std::move(result.error)};
     }
     if (!result.has_value()) {
-        guard.keep();
+        guard.Keep();
         return Value::Null();
     }
     return std::move(*result);
 }
 
-error::Result<Value> Machine::resume() {
+error::Result<Value> Machine::Resume() {
     if (_state.runStack.empty()) {
         return {Value::Null(), _state.MakeRuntimeError(error::Code::VM_NOTHING_TO_RESUME, "nothing to resume")};
     }
@@ -456,14 +456,14 @@ error::Result<Value> Machine::resume() {
                 state.runStack.pop_back();
             }
         }
-        void keep() { active = false; }
+        void Keep() { active = false; }
     } guard{_state};
-    auto result = execute();
+    auto result = Execute();
     if (result.error) {
         return {Value::Null(), std::move(result.error)};
     }
     if (!result.has_value()) {
-        guard.keep();
+        guard.Keep();
         return Value::Null();
     }
     return std::move(*result);
@@ -517,7 +517,7 @@ bool createsCycle(const Value& value, const TableHandle& destination) {
 
 }  // анонимное пространство имён
 
-Value* Machine::referenced(const Value& value) {
+Value* Machine::Referenced(const Value& value) {
     if (!value.IsReference()) {
         _state.RecordRuntimeError(error::Code::VM_VALUE_NOT_REFERENCE, "value is not a reference");
         return nullptr;
@@ -594,7 +594,7 @@ float castStringToFloat(const std::string& text, const std::string& format) {
 // Один шаг — одна инструкция верхнего кадра. bump двигает ip того кадра,
 // который сейчас сверху: после Call сверху уже другой кадр, поэтому ip
 // вызывающего увеличивают до push. write пишет в текущий верхний кадр.
-error::Result<std::optional<Value>> Machine::execute() {
+error::Result<std::optional<Value>> Machine::Execute() {
     auto pendingError = [&]() -> error::Result<std::optional<Value>> {
         return {std::nullopt, _state.GetRuntimeError()};
     };
@@ -624,7 +624,7 @@ error::Result<std::optional<Value>> Machine::execute() {
         case Op::LoadConst: {
             const Constant& constant = chunk.constants[ins.b];
             if (const auto* number = std::get_if<int>(&constant)) frame.regs[ins.a] = Value::Integer(*number);
-            else frame.regs[ins.a] = materialize(chunk, ins.b);
+            else frame.regs[ins.a] = Materialize(chunk, ins.b);
             frame.ip++;
             break;
         }
@@ -673,9 +673,9 @@ error::Result<std::optional<Value>> Machine::execute() {
             const Value& lhs = frame.regs[ins.b];
             const Value& rhs = frame.regs[ins.c];
             if (lhs.index() == VT_INT && rhs.index() == VT_INT) {
-                frame.regs[ins.a] = intBinary(ins.op, std::get<int>(lhs), std::get<int>(rhs));
+                frame.regs[ins.a] = IntBinary(ins.op, std::get<int>(lhs), std::get<int>(rhs));
             } else {
-                frame.regs[ins.a] = binary(ins.op, lhs, rhs);
+                frame.regs[ins.a] = Binary(ins.op, lhs, rhs);
             }
             frame.ip++;
             break;
@@ -685,16 +685,16 @@ error::Result<std::optional<Value>> Machine::execute() {
             const Value& lhs = frame.regs[ins.b];
             const Op op = static_cast<Op>(ins.c);
             if (lhs.index() == VT_INT) {
-                frame.regs[ins.a] = intBinary(op, std::get<int>(lhs), imm);
+                frame.regs[ins.a] = IntBinary(op, std::get<int>(lhs), imm);
             } else {
-                frame.regs[ins.a] = binary(op, lhs, Value::Integer(imm));
+                frame.regs[ins.a] = Binary(op, lhs, Value::Integer(imm));
             }
             frame.ip++;
             break;
         }
         case Op::Neg: case Op::Not: case Op::BitNot: {
             Value value = fastReg(frame, ins.b);
-            write(ins.a, unary(ins.op, value));
+            write(ins.a, Unary(ins.op, value));
             bump();
             break;
         }
@@ -705,7 +705,7 @@ error::Result<std::optional<Value>> Machine::execute() {
         case Op::JumpIfFalse:
         case Op::JumpIfTrue: {
             if (_state.hasRuntimeError) return pendingError();
-            bool flag = _state.truthy(fastReg(frame, ins.a));
+            bool flag = _state.Truthy(fastReg(frame, ins.a));
             if ((ins.op == Op::JumpIfFalse && !flag) || (ins.op == Op::JumpIfTrue && flag)) {
                 frame.ip = ins.b;
             } else {
@@ -729,9 +729,9 @@ error::Result<std::optional<Value>> Machine::execute() {
                     else if (op == Op::CmpGe) result = *left >= *right;
                     else return failure(error::Code::VM_INTERNAL_OPERATOR_FAULT, "internal operator fault");
                 } else if (op == Op::CmpEq) {
-                    result = equals(lhs, rhs);
+                    result = Equals(lhs, rhs);
                 } else if (op == Op::CmpNe) {
-                    result = !equals(lhs, rhs);
+                    result = !Equals(lhs, rhs);
                 } else {
                     const auto leftNumber = lhs.AsNumber();
                     const auto rightNumber = rhs.AsNumber();
@@ -745,9 +745,9 @@ error::Result<std::optional<Value>> Machine::execute() {
                     }
                 }
             } else if (op == Op::CmpEq) {
-                result = equals(lhs, rhs);
+                result = Equals(lhs, rhs);
             } else if (op == Op::CmpNe) {
-                result = !equals(lhs, rhs);
+                result = !Equals(lhs, rhs);
             } else {
                 const auto left = lhs.AsNumber();
                 const auto right = rhs.AsNumber();
@@ -837,7 +837,7 @@ error::Result<std::optional<Value>> Machine::execute() {
                 else bump();
                 break;
             }
-            counter = binary(Op::Add, counter, Value::Integer(1));
+            counter = Binary(Op::Add, counter, Value::Integer(1));
             if (const auto* left = std::get_if<int>(&counter); left) {
                 if (const auto* right = std::get_if<int>(&limit); right) {
                     if (*left <= *right) frame.ip = ins.c;
@@ -873,7 +873,7 @@ error::Result<std::optional<Value>> Machine::execute() {
             const Chunk& callee = _state.functions[ins.b];
             Frame next;
             next.function = ins.b;
-            next.generation = _state.freshFrameId();
+            next.generation = _state.FreshFrameId();
             next.writesParent = true;
             next.parentDest = ins.a;
             next.regs.resize(callee.registerCount);
@@ -952,7 +952,7 @@ error::Result<std::optional<Value>> Machine::execute() {
         case Op::SetProp:
         case Op::CallMethod: {
             if (_state.hasRuntimeError) return pendingError();
-            const std::string_view name = _state.constantString(chunk, ins.op == Op::SetProp ? ins.b : ins.c);
+            const std::string_view name = _state.ConstantString(chunk, ins.op == Op::SetProp ? ins.b : ins.c);
             if (_state.hasRuntimeError) return pendingError();
             Value object = fastReg(frame, ins.op == Op::SetProp ? ins.a : ins.b);
             if (!object.IsObject()) return failure(error::Code::VM_VALUE_HAS_NO_PROPERTIES, "value has no properties");
@@ -988,7 +988,7 @@ error::Result<std::optional<Value>> Machine::execute() {
             // Ссылочный строковый слот получает разделяемое стабильное хранилище.
             auto& frames = _state.runStack.back().frames;
             promoteString(frames.back().regs[ins.b]);
-            const size_t referenceId = _state.freshReferenceId();
+            const size_t referenceId = _state.FreshReferenceId();
             if (_state.hasRuntimeError) return pendingError();
             write(ins.a, Value(std::in_place_type<LocalReference>,
                 LocalReference{static_cast<uint32_t>(frames.size() - 1), frames.back().generation,
@@ -1008,7 +1008,7 @@ error::Result<std::optional<Value>> Machine::execute() {
             if (tableIndex < container->size()) {
                 promoteString((*container)[tableIndex]);
             }
-            const size_t referenceId = _state.freshReferenceId();
+            const size_t referenceId = _state.FreshReferenceId();
             if (_state.hasRuntimeError) return pendingError();
             write(ins.a, Value(std::in_place_type<IndexedReference>,
                 IndexedReference{container, tableIndex, referenceId}));
@@ -1018,7 +1018,7 @@ error::Result<std::optional<Value>> Machine::execute() {
         case Op::MakeRefGlobal: {
             const size_t slot = ins.b;
             if (slot < _state.globals.size()) promoteString(_state.globals[slot].value);
-            const size_t referenceId = _state.freshReferenceId();
+            const size_t referenceId = _state.FreshReferenceId();
             if (_state.hasRuntimeError) return pendingError();
             write(ins.a, Value(std::in_place_type<GlobalReference>,
                 GlobalReference{static_cast<uint32_t>(slot), referenceId}));
@@ -1027,7 +1027,7 @@ error::Result<std::optional<Value>> Machine::execute() {
         }
         case Op::LoadRef: {
             Value ref = fastReg(frame, ins.b);
-            Value* target = referenced(ref);
+            Value* target = Referenced(ref);
             if (!target) return pendingError();
             promoteString(*target);
             write(ins.a, *target);
@@ -1044,7 +1044,7 @@ error::Result<std::optional<Value>> Machine::execute() {
                         return failure(error::Code::VM_CYCLIC_TABLE_OWNERSHIP, "cyclic table ownership is not supported");
                     }
                 }
-                Value* target = referenced(ref);
+                Value* target = Referenced(ref);
                 if (!target) return pendingError();
                 *target = std::move(incoming);
                 promoteString(*target);
@@ -1060,7 +1060,7 @@ error::Result<std::optional<Value>> Machine::execute() {
             }
             const uint32_t globalSlot = static_cast<uint32_t>(*slot);
             promoteString(_state.globals[globalSlot].value);
-            const size_t referenceId = _state.freshReferenceId();
+            const size_t referenceId = _state.FreshReferenceId();
             if (_state.hasRuntimeError) return pendingError();
             write(ins.a, Value(std::in_place_type<GlobalReference>,
                 GlobalReference{globalSlot, referenceId}));
@@ -1101,7 +1101,7 @@ error::Result<std::optional<Value>> Machine::execute() {
             break;
         }
         case Op::NewObj: {
-            const std::string_view type = _state.constantString(chunk, ins.b);
+            const std::string_view type = _state.ConstantString(chunk, ins.b);
             if (_state.hasRuntimeError) return pendingError();
             auto factory = _state.factories.find(std::string(type));
             if (factory == _state.factories.end() || !factory->second) {
@@ -1119,7 +1119,7 @@ error::Result<std::optional<Value>> Machine::execute() {
             Value value = fastReg(frame, ins.b);
             std::string format;
             if (ins.d != 65535) {
-                format = std::string(_state.constantString(chunk, ins.d));
+                format = std::string(_state.ConstantString(chunk, ins.d));
                 if (_state.hasRuntimeError) return pendingError();
             }
             if (ins.c == 2 && value.IsString()) {
@@ -1143,7 +1143,7 @@ error::Result<std::optional<Value>> Machine::execute() {
             if (ins.c == 0) {
                 if (const auto* integerValue = std::get_if<int>(&value)) write(ins.a, Value::Integer(*integerValue));
                 else if (const auto* realValue = std::get_if<float>(&value)) {
-                    write(ins.a, Value::Integer(narrowInt(*realValue)));
+                    write(ins.a, Value::Integer(NarrowInt(*realValue)));
                 }
                 else if (const auto* flag = std::get_if<bool>(&value)) write(ins.a, Value::Integer(*flag ? 1 : 0));
                 else if (value.IsString()) {
@@ -1164,7 +1164,7 @@ error::Result<std::optional<Value>> Machine::execute() {
             if (_state.hasRuntimeError) return pendingError();
             // Имя ищется линейно: сначала скриптовые функции, потом нативы.
             // Нет ни там, ни там — в регистр пишется int 0, не null и не ошибка.
-            const std::string_view name = _state.constantString(chunk, ins.b);
+            const std::string_view name = _state.ConstantString(chunk, ins.b);
             if (_state.hasRuntimeError) return pendingError();
             if (ins.d > 0 && static_cast<size_t>(ins.c) + ins.d > frame.regs.size()) {
                 return failure(error::Code::VM_INTERNAL_ARGUMENT_FAULT, "internal argument fault");
@@ -1178,7 +1178,7 @@ error::Result<std::optional<Value>> Machine::execute() {
                 const auto index = static_cast<size_t>(std::distance(_state.functions.begin(), function));
                 Frame next;
                 next.function = index;
-                next.generation = _state.freshFrameId();
+                next.generation = _state.FreshFrameId();
                 next.writesParent = true;
                 next.parentDest = ins.a;
                 next.regs.resize(function->registerCount);

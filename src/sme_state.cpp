@@ -5,7 +5,7 @@
 
 namespace sme {
 
-size_t State::freshFrameId() {
+size_t State::FreshFrameId() {
     size_t id = frameSerial++;
     if (frameSerial == 0) {
         frameSerial = 1;
@@ -13,7 +13,7 @@ size_t State::freshFrameId() {
     return id;
 }
 
-size_t State::freshReferenceId() {
+size_t State::FreshReferenceId() {
     if (referenceSerial == 0) {
         RecordRuntimeError(error::Code::VM_REFERENCE_IDENTITY_EXHAUSTED, "reference identity exhausted");
         return 0;
@@ -85,7 +85,7 @@ void State::RecordRuntimeError(const error::Error& error) {
 
 
 // Ссылка истинна сама по себе, независимо от значения, на которое указывает.
-bool State::truthy(const Value& value) const {
+bool State::Truthy(const Value& value) const {
     if (const auto* integer = std::get_if<int>(&value)) return *integer != 0;
     switch (value.TypeOf()) {
     case Type::Int: return std::get<int>(value) != 0;
@@ -104,7 +104,7 @@ bool State::truthy(const Value& value) const {
     return false;
 }
 
-std::string_view State::constantString(const Chunk& chunk, size_t index) {
+std::string_view State::ConstantString(const Chunk& chunk, size_t index) {
     if (index >= chunk.constants.size()) {
         RecordRuntimeError(error::Code::VM_INTERNAL_CONSTANT_FAULT, "internal constant fault");
         return {};

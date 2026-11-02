@@ -20,7 +20,7 @@ public:
     using Ptr = std::shared_ptr<ILogging>;
 
     virtual ~ILogging() = default;
-    virtual void message(Level level, const std::string& text) = 0;
+    virtual void Message(Level level, const std::string& text) = 0;
 };
 
 }  // пространство имён sme::log

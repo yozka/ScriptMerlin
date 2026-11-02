@@ -153,18 +153,18 @@ namespace sme::error
 		using Opt = std::optional<Error>;
 
 	public:
-		Error(Code code, std::string message, Location location = {},
+		Error(::sme::error::Code code, std::string message, ::sme::error::Location location = {},
 			  std::vector<StackFrame> stack = {});
 		
-		Code code() const noexcept;
-		const std::string& message() const noexcept;
-		const Location& location() const noexcept;
-		const std::vector<StackFrame>& stack() const noexcept;
+		::sme::error::Code Code() const noexcept;
+		const std::string& Message() const noexcept;
+		const ::sme::error::Location& Location() const noexcept;
+		const std::vector<StackFrame>& Stack() const noexcept;
 		
 	private:
-		Code _code;
+		::sme::error::Code _code;
 		std::string _message;
-		Location _location;
+		::sme::error::Location _location;
 		std::vector<StackFrame> _stack;
 	};
 
@@ -183,9 +183,9 @@ namespace sme::error
 		{
 		}
 
-		T& value() & noexcept { return *this; }
-		const T& value() const& noexcept { return *this; }
-		T&& value() && noexcept { return std::move(*this); }
+		T& Value() & noexcept { return *this; }
+		const T& Value() const& noexcept { return *this; }
+		T&& Value() && noexcept { return std::move(*this); }
 		explicit operator bool() const noexcept { return !error; }
 	};
 

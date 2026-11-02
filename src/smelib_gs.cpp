@@ -283,7 +283,7 @@ void sme::library::InstallGS(Engine& engine)
 			return Value::Null();
 		}
 
-		const auto index = engine.findFunction(args[0].ToString());
+		const auto index = engine.FindFunction(args[0].ToString());
 		return Value::Integer(index ? static_cast<int>(*index) : -1);
 	});
 	
@@ -295,7 +295,7 @@ void sme::library::InstallGS(Engine& engine)
 			return Value::Null();
 		}
 
-		const auto index = engine.findGlobal(args[0].ToString());
+		const auto index = engine.FindGlobal(args[0].ToString());
 		return Value::Integer(index ? static_cast<int>(*index) : -1);
 	});
 }

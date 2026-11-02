@@ -150,15 +150,15 @@ struct State
     bool hasRuntimeError = false;
     error::Error::Opt runtimeError;
 
-    size_t freshFrameId();
-    size_t freshReferenceId();
+    size_t FreshFrameId();
+    size_t FreshReferenceId();
 
-    bool truthy(const Value& value) const;
+    bool Truthy(const Value& value) const;
     void ClearRuntimeError();
     const error::Error& GetRuntimeError() const;
 
     // Вид живёт в пуле констант chunk, пока этот chunk не заменят.
-    std::string_view constantString(const Chunk& chunk, size_t index);
+    std::string_view ConstantString(const Chunk& chunk, size_t index);
 
     error::Error MakeRuntimeError(error::Code code, std::string text) const;
 	void RecordRuntimeError(error::Code code, const std::string& text);

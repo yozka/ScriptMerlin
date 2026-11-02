@@ -62,15 +62,15 @@ namespace sme
 		
 	public:
 		// Индекс функции или глобала. nullopt — имени нет.
-		std::optional<size_t> findFunction(std::string_view name) const;
-		std::optional<size_t> findGlobal(std::string_view name) const;
+		std::optional<size_t> FindFunction(std::string_view name) const;
+		std::optional<size_t> FindGlobal(std::string_view name) const;
 		// Вызов по индексу. Ошибки выполнения возвращаются в Result и останавливают
 		// всю активную цепочку вызовов.
-		error::Result<Value> callIndex(size_t index, std::span<const Value> args);
+		error::Result<Value> CallIndex(size_t index, std::span<const Value> args);
 		
 		// Если value — ссылка, вернуть то, на что она указывает. Иначе само value.
 		// Протухшая ссылка читается как null, без исключения.
-		Value follow(const Value& value) const;
+		Value Follow(const Value& value) const;
 		void ResizeTable(const Value& table, size_t size);
 		
 		// Подменяет таблицу функций. Уже существующие глобалы сохраняют значения;
@@ -83,11 +83,11 @@ namespace sme
 		
 		// Недостающие аргументы приходят как null, лишние отбрасываются — как при
 		// вызове скрипт→скрипт. Result содержит значение или первую runtime-ошибку.
-		error::Result<Value> call(std::string_view function, std::span<const Value> args = {});
+		error::Result<Value> Call(std::string_view function, std::span<const Value> args = {});
 		// Верхний кадр стоит сразу за stop. Вложенный call чужую паузу не снимает.
-		bool stopped() const;
-		error::Result<Value> resume();
-		Value globalAt(size_t index) const;
+		bool Stopped() const;
+		error::Result<Value> Resume();
+		Value GlobalAt(size_t index) const;
 		
 	public:
 		void Log(const log::Level level, const std::string& text);
@@ -95,7 +95,7 @@ namespace sme
 		
 	private:
 		error::Error::Opt CompileUnit(const struct SourceUnit& unit, std::string_view name);
-		error::Result<Value> invoke(size_t index, std::span<const Value> args);
+		error::Result<Value> Invoke(size_t index, std::span<const Value> args);
 		std::unique_ptr<State> _state;
 	};
 
