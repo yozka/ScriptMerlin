@@ -39,6 +39,7 @@ struct Expr {
     bool boolValue = false;
     bool prefix = false; // ++x, а не x++
     std::string text;    // имя, текст строки, тип каста или имя типа newobj
+                         // у NewObj kids — аргументы «конструктора»
     std::string format;  // формат printf для каста, например "%02i" или "%.2f"
     std::vector<std::unique_ptr<Expr>> kids;
 };

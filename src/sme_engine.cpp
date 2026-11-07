@@ -146,7 +146,7 @@ namespace sme
 	}
 
 
-	void Engine::RegisterFactory(std::string name, std::function<std::shared_ptr<IScriptObject>()> factory)
+	void Engine::RegisterFactory(std::string name, FactoryFn factory)
 	{
 		if (!factory) {
 			SME_ASSERT_FAIL("factory '" + name + "' is empty");

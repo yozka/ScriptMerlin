@@ -23,6 +23,10 @@ namespace sme
 	// Аргументы — уже вычисленные значения. Возврат null допустим.
 	using NativeFn = std::function<Value(Engine& engine, Arguments args)>;
 
+	// Фабрика, которую игра регистрирует и которую newobj<Имя>(...) вызывает по имени.
+	// Аргументы — уже вычисленные значения «конструктора».
+	using FactoryFn = std::function<std::shared_ptr<IScriptObject>(Engine& engine, std::span<const Value> args)>;
+
 	// Рантайм ScriptMerlin. Конвейер такой:
 	// исходник → препроцессор → лексер → парсер → компилятор → регистровая VM.
 	//
@@ -53,8 +57,8 @@ namespace sme
 		// Натив виден скрипту как обычная функция. Повторное имя — ошибка.
 		void RegisterFn(std::string name, NativeFn function);
 		
-		// newobj<Имя>() в скрипте ищет фабрику, зарегистрированную здесь.
-		void RegisterFactory(std::string name, std::function<std::shared_ptr<IScriptObject>()> factory);
+		// newobj<Имя>(...) в скрипте ищет фабрику, зарегистрированную здесь.
+		void RegisterFactory(std::string name, FactoryFn factory);
 		
 		// Глобал с этим именем начинает указывать на объект хоста.
 		void Bind(std::string name, std::shared_ptr<IScriptObject> object);

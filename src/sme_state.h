@@ -19,8 +19,6 @@ namespace sme {
 // Внутреннее состояние движка: байткод и кадры.
 // Публичный API — Engine. Сюда смотрят компилятор и интерпретатор.
 
-using Factory = std::function<std::shared_ptr<IScriptObject>()>;
-
 // Константа байткода. Строка здесь ещё текст: LoadConst копирует её в Value.
 using Constant = std::variant<std::monostate, int, float, bool, std::string, std::nullptr_t>;
 
@@ -73,7 +71,7 @@ enum class Op : uint8_t {
     MakeRefIndex, // r[a] = &r[b][r[c]]
     LoadRef,      // r[a] = *r[b]
     StoreRef,     // *r[a] = r[b]; null не пишет
-    NewObj,       // r[a] = фабрика(константа b)
+    NewObj,       // r[a] = фабрика(константа b)(r[c] .. count d)
     Cast,         // r[a] = каст r[b] в вид c; формат — константа d, 65535 значит «без формата»
     Typeof,       // r[a] = код типа r[b]; оператор ? компилируется сюда
     LogicAnd,     // r[a] = истина(r[b]) && истина(r[c]); обе стороны уже вычислены, короткой схемы нет
@@ -143,7 +141,7 @@ struct State
     std::vector<Chunk> functions;
     std::vector<std::string> nativeNames;
     std::vector<NativeFn> natives;
-    std::unordered_map<std::string, Factory> factories;
+    std::unordered_map<std::string, FactoryFn> factories;
     std::vector<RunState> runStack;
     size_t frameSerial = 1;
     size_t referenceSerial = 1;

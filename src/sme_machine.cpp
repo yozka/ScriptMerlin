@@ -1107,12 +1107,19 @@ error::Result<std::optional<Value>> Machine::Execute() {
             if (factory == _state.factories.end() || !factory->second) {
                 return failure(error::Code::VM_UNKNOWN_TYPE, "unknown type '" + std::string(type) + "'");
             }
-            std::shared_ptr<IScriptObject> object = factory->second();
+            if (ins.d > 0 && static_cast<size_t>(ins.c) + ins.d > frame.regs.size()) {
+                return failure(error::Code::VM_INTERNAL_ARGUMENT_FAULT, "internal argument fault");
+            }
+            const std::span<const Value> args(frame.regs.data() + ins.c, ins.d);
+            bump();
+            std::shared_ptr<IScriptObject> object = factory->second(_engine, args);
+            if (_state.hasRuntimeError) {
+                return pendingError();
+            }
             if (!object) {
                 return failure(error::Code::VM_UNKNOWN_TYPE, "unknown type '" + std::string(type) + "'");
             }
-            write(ins.a, Value(std::move(object)));
-            bump();
+            _state.runStack.back().frames.back().regs[ins.a] = Value(std::move(object));
             break;
         }
         case Op::Cast: {

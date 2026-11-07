@@ -19,10 +19,12 @@
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <span>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -221,6 +223,12 @@ public:
     static int alive;
 
     TStruct() { ++alive; }
+    TStruct(std::string str, int n)
+        : _testInt(n)
+        , _testStr(std::move(str))
+    {
+        ++alive;
+    }
     ~TStruct() override { --alive; }
 
     sme::Value GetProperty(sme::Engine& engine, std::string_view name) const override {
@@ -270,6 +278,13 @@ private:
 };
 
 int TStruct::alive = 0;
+
+std::shared_ptr<TStruct> makeTStruct(sme::Engine&, std::span<const sme::Value> args) {
+    if (args.size() >= 2 && args[0].IsString() && args[1].IsInteger()) {
+        return std::make_shared<TStruct>(args[0].ToString(), std::get<int>(args[1]));
+    }
+    return std::make_shared<TStruct>();
+}
 
 }  // анонимное пространство имён
 
@@ -1312,6 +1327,60 @@ TEST(Regression, PreviousBug3)
     EXPECT_FLOAT_EQ(script.Floating(), 3.14f);
 }
 
+TEST(IScriptObject, test_PropCtor)
+{
+    TStruct::alive = 0;
+    sme::Engine engine;
+    engine.SetFileSystem(sme::MakeStdFileSystem());
+	sme::library::InstallDefault(engine);
+	sme::library::InstallMath(engine);
+	sme::library::InstallGS(engine);
+    engine.RegisterFactory("TStruct", makeTStruct);
+    engine.Load(scriptPath("ver2/test_prop.gs"));
+    sme::Value value = callValue(engine, "test_PropCtor");
+    EXPECT_EQ(TStruct::alive, 0);
+    EXPECT_EQ(value.CastString(), "hello world42");
+}
+
+TEST(IScriptObject, ConstructorArgs)
+{
+    std::vector<sme::Value> received;
+    sme::Engine engine;
+    engine.RegisterFactory("TStruct", [&](sme::Engine& callbackEngine, std::span<const sme::Value> args) {
+        received.assign(args.begin(), args.end());
+        return makeTStruct(callbackEngine, args);
+    });
+    ASSERT_FALSE(engine.LoadSource(R"(
+        func from_literals() {
+            obj = newobj<TStruct>("bla bla bla", 42);
+            return obj.test_str + (str)obj.test_int;
+        }
+        func from_exprs() {
+            s = "hello";
+            n = 20 + 22;
+            obj = newobj<TStruct>(s, n);
+            return obj.test_str + (str)obj.test_int;
+        }
+    )"));
+
+    sme::Value literals = callValue(engine, "from_literals");
+    ASSERT_EQ(received.size(), 2u);
+    ASSERT_TRUE(received[0].IsString());
+    ASSERT_TRUE(received[1].IsInteger());
+    EXPECT_EQ(received[0].ToString(), "bla bla bla");
+    EXPECT_EQ(std::get<int>(received[1]), 42);
+    EXPECT_EQ(literals.CastString(), "bla bla bla42");
+
+    received.clear();
+    sme::Value exprs = callValue(engine, "from_exprs");
+    ASSERT_EQ(received.size(), 2u);
+    ASSERT_TRUE(received[0].IsString());
+    ASSERT_TRUE(received[1].IsInteger());
+    EXPECT_EQ(received[0].ToString(), "hello");
+    EXPECT_EQ(std::get<int>(received[1]), 42);
+    EXPECT_EQ(exprs.CastString(), "hello42");
+}
+
 TEST(IScriptObject, test_Prop)
 {
     TStruct::alive = 0;
@@ -1320,7 +1389,7 @@ TEST(IScriptObject, test_Prop)
 	sme::library::InstallDefault(engine);
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
-    engine.RegisterFactory("TStruct", [] { return std::make_shared<TStruct>(); });
+    engine.RegisterFactory("TStruct", makeTStruct);
     engine.Load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = callValue(engine, "test_Prop");
     EXPECT_EQ(TStruct::alive, 0);
@@ -1335,7 +1404,7 @@ TEST(IScriptObject, test_PropCall)
 	sme::library::InstallDefault(engine);
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
-    engine.RegisterFactory("TStruct", [] { return std::make_shared<TStruct>(); });
+    engine.RegisterFactory("TStruct", makeTStruct);
     engine.Load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = callValue(engine, "test_PropCall");
     EXPECT_EQ(TStruct::alive, 0);
@@ -1350,7 +1419,7 @@ TEST(IScriptObject, test_PropAdd)
 	sme::library::InstallDefault(engine);
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
-    engine.RegisterFactory("TStruct", [] { return std::make_shared<TStruct>(); });
+    engine.RegisterFactory("TStruct", makeTStruct);
     engine.Load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = callValue(engine, "test_PropAdd");
     ASSERT_TRUE(value.IsInteger());
@@ -1367,8 +1436,8 @@ TEST(IScriptObject, test_PropSharedLifetime)
 	sme::library::InstallDefault(engine);
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
-    engine.RegisterFactory("TStruct", [&kept] {
-        kept = std::make_shared<TStruct>();
+    engine.RegisterFactory("TStruct", [&kept](sme::Engine& engine, std::span<const sme::Value> args) {
+        kept = makeTStruct(engine, args);
         return kept;
     });
     engine.Load(scriptPath("ver2/test_prop.gs"));
@@ -1515,7 +1584,7 @@ TEST(IScriptObject, test_PropCompound)
 	sme::library::InstallDefault(engine);
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
-    engine.RegisterFactory("TStruct", [] { return std::make_shared<TStruct>(); });
+    engine.RegisterFactory("TStruct", makeTStruct);
     engine.Load(scriptPath("ver2/test_prop.gs"));
     sme::Value value = callValue(engine, "test_PropCompound");
     EXPECT_EQ(TStruct::alive, 0);
@@ -1901,7 +1970,7 @@ TEST(Performance, WorkloadSpeed)
 	sme::library::InstallDefault(engine);
 	sme::library::InstallMath(engine);
 	sme::library::InstallGS(engine);
-    engine.RegisterFactory("TStruct", [] { return std::make_shared<TStruct>(); });
+    engine.RegisterFactory("TStruct", makeTStruct);
     engine.Load(scriptPath("ver2/test_performance.gs"));
 
     constexpr int kRepeats = 5;

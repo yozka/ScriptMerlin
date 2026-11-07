@@ -243,8 +243,18 @@ private:
         case Expr::Kind::PostDec:
             return CompileUpdate(expr, -1);
         case Expr::Kind::NewObj: {
+            std::vector<uint16_t> args;
+            args.reserve(expr.kids.size());
+            for (const auto& arg : expr.kids) {
+                args.push_back(CompileExpr(*arg));
+            }
+            uint16_t base = _watermark;
+            for (uint16_t arg : args) {
+                uint16_t slot = AllocTemp();
+                Emit(Op::Copy, slot, arg, 0, 0, 0, expr.line);
+            }
             uint16_t dest = AllocTemp();
-            Emit(Op::NewObj, dest, AddConst(expr.text), 0, 0, 0, expr.line);
+            Emit(Op::NewObj, dest, AddConst(expr.text), base, static_cast<uint16_t>(args.size()), 0, expr.line);
             return dest;
         }
         case Expr::Kind::Query:

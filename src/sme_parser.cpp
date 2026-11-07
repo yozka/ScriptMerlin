@@ -716,9 +716,14 @@ private:
                 Token type = Consume(Token::Kind::Identifier, "type name");
                 Consume(Token::Kind::Gt, "'>'");
                 Consume(Token::Kind::LParen, "'('");
-                Consume(Token::Kind::RParen, "')'");
                 auto expr = MakeExpr(Expr::Kind::NewObj, token.line);
                 expr->text = type.text;
+                if (!Check(Token::Kind::RParen)) {
+                    do {
+                        expr->kids.push_back(ParseExpr());
+                    } while (Match(Token::Kind::Comma));
+                }
+                Consume(Token::Kind::RParen, "')'");
                 return expr;
             }
         }

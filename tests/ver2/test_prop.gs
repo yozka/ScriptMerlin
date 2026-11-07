@@ -1,5 +1,12 @@
 
 
+func test_PropCtor()
+{
+    obj = newobj<TStruct>("hello world", 42);
+    obj.run();
+    return obj.test_out;
+}
+
 func test_Prop()
 {
     obj = newobj<TStruct>();
